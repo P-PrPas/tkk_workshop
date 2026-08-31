@@ -19,7 +19,7 @@ tkk_workshop/            ← repo นี้
 ├── docs/                ← 00 ภาพรวม, 01 สเปกโน้ตบุ๊ก, 02 ข้อมูล, 03 โมเดล, 04 แอป
 ├── notebooks/cv101.ipynb
 ├── app/{app.py,config.yaml}
-├── tools/{autolabel.py,preview_labels.py,build_bigdata.py}
+├── tools/build_bigdata.py
 └── data/                ← submodule → github.com/P-PrPas/tkk_workshop-data
 ```
 
@@ -45,8 +45,6 @@ tkk_workshop/            ← repo นี้
 
 ## คำสั่งที่ใช้บ่อย
 ```bash
-python tools/autolabel.py                    # ยิง label ตั้งต้นให้รูปใหม่
-python tools/preview_labels.py               # ดู label ด้วยตาก่อน commit
 python tools/build_bigdata.py                # ดึง Open Images มาเตรียมเทรนโมเดลดี
 python app/app.py                            # รันแอป
 git clone --recursive <code repo>            # ฝั่งนักพัฒนา ต้องมี --recursive

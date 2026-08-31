@@ -58,8 +58,21 @@ def run_webcam(process_frame, seconds=20):
 > clone data repo ตรงๆ ไม่พึ่ง `--recursive` (ดู [02-data.md](02-data.md))
 
 ### เซลล์ 5 (code)
-แสดงกริด 15 รูปพร้อมกล่อง ground-truth ที่วาดจากไฟล์ `.txt` — ให้ผู้เรียนเห็นว่า
-"label" ไม่ใช่เวทมนตร์ แต่คือตัวเลข 5 ตัวต่อหนึ่งกล่อง
+ตรวจฟอร์แมต label ก่อน แล้วค่อยแสดงผล — label ที่ผิดฟอร์แมตจะเทรนผ่านโดยไม่มี error
+แต่ได้โมเดลที่ตรวจไม่เจออะไรเลย ซึ่งวินิจฉัยยากมากกลางห้องเรียน
+```python
+for txt in Path("data/labels").rglob("*.txt"):
+    assert txt.with_suffix(".jpg").name in image_names, f"{txt.name} ไม่มีรูปคู่กัน"
+    for line in txt.read_text().split("\n"):
+        if not line.strip(): continue
+        cls, *box = line.split()
+        assert cls == "0", f"{txt.name}: class ต้องเป็น 0"
+        assert all(0 <= float(v) <= 1 for v in box), f"{txt.name}: พิกัดต้อง normalize"
+print("label ผ่านการตรวจทั้งหมด")
+```
+จากนั้นแสดงกริด 15 รูปพร้อมกล่อง ground-truth ที่วาดจากไฟล์ `.txt` — ให้ผู้เรียนเห็นว่า
+"label" ไม่ใช่เวทมนตร์ แต่คือตัวเลข 5 ตัวต่อหนึ่งกล่อง และการเห็นกล่องอยู่ถูกที่
+คือการตรวจที่ครอบคลุมกว่า assert ข้างบน
 ```python
 print("train:", len(train_imgs), "| val:", len(val_imgs), "| test:", len(test_imgs))
 # 10 / 2 / 3
