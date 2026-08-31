@@ -62,35 +62,24 @@ names:
 
 ข้อกำหนดเทคนิค: JPG, ด้านยาวไม่เกิน 1280px (ไฟล์รวมควร < 5MB เพื่อให้ clone เร็ว)
 
-## Auto-label
-`tools/autolabel.py` — ใช้ YOLO ที่ผ่าน COCO มาแล้วยิง label ตั้งต้น แล้วคนไล่แก้
+## label
+dataset ที่ได้รับมามี label แนบมาแล้วในรูปแบบ YOLO `.txt` — หนึ่งไฟล์ต่อหนึ่งรูป
+ชื่อตรงกัน บรรทัดละหนึ่งกล่อง `class cx cy w h` โดย cx/cy/w/h เป็นค่า normalize 0-1
 
-```python
-# tools/autolabel.py
-from pathlib import Path
-from ultralytics import YOLO
+ไม่มีขั้นตอน label ในโปรเจกต์นี้ และไม่มีสคริปต์ auto-label
 
-COCO_CUP = 41  # class id ของ 'cup' ใน COCO
+### สิ่งเดียวที่ต้องตรวจ
+"label มีอยู่" ไม่ได้แปลว่า "label ถูกฟอร์แมต" — ความผิดพลาดสามอย่างนี้ทำให้เทรนผ่าน
+โดยไม่มี error แต่ได้โมเดลที่ตรวจไม่เจออะไรเลย:
 
-def autolabel(img_dir: Path, out_dir: Path, conf: float = 0.25) -> None:
-    model = YOLO("yolo11x.pt")
-    out_dir.mkdir(parents=True, exist_ok=True)
-    for img in sorted(img_dir.glob("*.jpg")):
-        r = model(img, conf=conf, classes=[COCO_CUP], verbose=False)[0]
-        lines = [f"0 {x:.6f} {y:.6f} {w:.6f} {h:.6f}"
-                 for x, y, w, h in r.boxes.xywhn.tolist()]
-        (out_dir / f"{img.stem}.txt").write_text("\n".join(lines))
-        print(f"{img.name}: {len(lines)} boxes")
-```
+| อาการ | ผลที่เกิด |
+|---|---|
+| class id ไม่ใช่ `0` | ultralytics มองว่าเป็นคลาสที่ไม่มีใน yaml |
+| พิกัดเป็นพิกเซล ไม่ได้ normalize | กล่องหลุดออกนอกภาพ ถูกทิ้งเงียบๆ |
+| ชื่อไฟล์ .txt ไม่ตรงกับชื่อรูป | ถือว่าภาพนั้นไม่มีวัตถุ |
 
-ขั้นตอน:
-1. ใส่รูปลง `images/{train,val,test}/`
-2. รัน `python tools/autolabel.py` (ใช้ `yolo11x.pt` ตัวใหญ่สุด — ช้าแต่แม่นกว่า เทรน
-   ไม่ได้ใช้มัน ใช้แค่ตอน label)
-3. **เปิดดูทุกไฟล์ด้วยตา** ผ่าน `tools/preview_labels.py` แล้วแก้ที่ผิด
-4. รูปที่ตั้งใจให้ยาก auto-label มักพลาด — ต้องแก้มือแน่นอน
-
-> ~15 รูปใช้เวลาไล่ตรวจ ~20 นาที เร็วกว่าลากกล่องเองทั้งหมด และให้ผลที่สม่ำเสมอกว่า
+โน้ตบุ๊กเซลล์ 5 จึงมี assert สั้นๆ ตรวจสามข้อนี้ก่อนเทรน แล้ววาดกล่องให้ดูด้วยตา
+— การเห็นกล่องอยู่ถูกที่บนรูปคือหลักฐานที่ครอบคลุมกว่า assert ใดๆ
 
 ## sample.mp4
 วิดีโอสำรองสำหรับกรณีกล้องใช้ไม่ได้ ~20 วินาที ต้องมีครบสามฉาก:

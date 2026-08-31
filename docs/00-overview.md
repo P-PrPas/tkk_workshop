@@ -47,7 +47,7 @@ JS webcam ~3-8 FPS                  threaded capture, FPS budget
 |---|---|---|
 | Runtime | Google Colab | ไม่ต้องติดตั้งอะไรบนเครื่องผู้เรียน |
 | Realtime | JS webcam loop → helper `run_webcam()` ตัวเดียว | `cv2.imshow` / `VideoCapture(0)` ใช้ไม่ได้บน Colab |
-| Dataset จิ๋ว | 15 รูปถ่ายเอง → 10/2/3 | ถ่ายในห้อง/แสงจริงของวันงาน |
+| Dataset จิ๋ว | 15 รูปพร้อม label YOLO → 10/2/3 | เจ้าของงานเตรียมให้ ไม่มีขั้นตอน label |
 | คลาส | 1 class `cup` = แก้วดื่มทุกแบบ ไม่รวมขวด | yaml ง่าย, logic ข้อ 3 ง่าย, ขวดกลายเป็น teaching moment |
 | น้ำหนักตั้งต้น | `yolo11n.pt` (COCO) | เริ่มจากศูนย์ = ตรวจไม่เจออะไรเลย = พาร์ท 3 พัง |
 | Hand pose | MediaPipe HandLandmarker | Ultralytics ปล่อยแค่ body pose 17 จุด ไม่มี hand checkpoint สำเร็จรูป |
