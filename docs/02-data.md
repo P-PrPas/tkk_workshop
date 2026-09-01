@@ -33,9 +33,9 @@ tkk_workshop-data/
     └── test/
 ```
 
-`cup.yaml`
+`cup.yaml` — ไม่ใส่ `path:` เพื่อให้ ultralytics อิงโฟลเดอร์ที่ไฟล์ yaml อยู่เป็น root
+(ใส่ `path: .` จะพังบน Colab เพราะมันไปอิง cwd `/content` แทน)
 ```yaml
-path: .
 train: images/train
 val: images/val
 test: images/test
