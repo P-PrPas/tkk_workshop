@@ -21,10 +21,16 @@ print("torch      :", torch.__version__, "| GPU:", torch.cuda.is_available())
 print("ultralytics:", ultralytics.__version__)
 print("mediapipe  :", mediapipe.__version__)
 assert ultralytics.__version__.startswith("8.3"), "ultralytics เวอร์ชันไม่ตรง"
-print("\nพร้อมแล้ว — ไม่ต้องมี GPU ก็รันได้ทั้งโน้ตบุ๊ก")
+print("\nพร้อมแล้ว เริ่มได้เลย —",
+      "ใช้ GPU (เซลล์กล้องจะลื่น)" if torch.cuda.is_available()
+      else "ใช้ CPU (รันได้ครบ; อยากให้เซลล์กล้องลื่นขึ้นสลับเป็น T4)")
 ```
-> **ไม่บังคับ GPU** — 10 รูป 3 epoch จบใน ~2 นาทีบน CPU การให้ผู้เรียน 20 คน
-> ไปกด Change runtime type พร้อมกันคือการเสียเวลา 5 นาทีโดยไม่ได้อะไร
+> **GPU เป็น opt-in ไม่ใช่ข้อบังคับ** — เทรน (10 รูป 3 epoch) จบใน ~15 วิ บน CPU อยู่แล้ว
+> โค้ดไม่ hardcode `device` เลย ultralytics ใช้ GPU อัตโนมัติถ้ามี
+> เหตุที่ไม่บังคับให้ทุกคนสลับ T4: (1) T4 ฟรีอาจถูกปฏิเสธ/โดน quota กลางคาบ ถ้าโน้ตบุ๊ก
+> *ต้อง* มี GPU คนกลุ่มนั้นตกขบวน (2) 20 คนกด Change runtime type พร้อมกัน = งง + เสียเวลา
+> ประโยชน์ของ T4 มีแค่ช่วงเซลล์กล้อง (YOLO inference) — hand pose ของ MediaPipe รันบน CPU อยู่ดี
+> ใครสลับได้ก็จะเห็น ~15-30fps แทน ~3-8fps · ใครไม่สลับก็รันครบทุกเซลล์เหมือนเดิม
 
 ## เซลล์ 2 — helper กล้อง (code, ยาวที่สุดในโน้ตบุ๊ก ~60 บรรทัด)
 หัวใจของทั้งไฟล์ เขียนครั้งเดียวใช้ 3 ที่

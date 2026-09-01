@@ -31,7 +31,8 @@ model.train(data="data/cup.yaml", epochs=3, imgsz=640, batch=4, seed=0, plots=Tr
 - label ใน data repo เป็น class **41** / predict ทุกครั้งใส่ `classes=[41]`
 - `seed=0` เพื่อให้ผู้เรียนทุกคนได้ผลใกล้เคียงกัน (ยังไม่ deterministic 100% แต่ช่วยได้)
 - `batch=4` เพราะ train มีแค่ 10 รูป
-- ไม่ต้องมี GPU
+- ไม่ hardcode `device` — เทรนบน CPU ~15 วิ, ถ้ามี T4 ultralytics ใช้เอง (opt-in ดู 01)
+  GPU ช่วยเฉพาะเซลล์กล้อง realtime ไม่ใช่ตอนเทรน
 
 **ข้อความที่ต้องพูดหน้าห้อง:** โมเดลรู้จัก "แก้ว" อยู่แล้วจาก COCO (คลาส 41)
 เราเก็บความรู้เดิมไว้แล้วขยับเฉพาะส่วนนั้นด้วยรูป 10 ใบ — นั่นคือ transfer learning ของจริง
