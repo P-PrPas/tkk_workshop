@@ -68,7 +68,7 @@ for txt in Path("data/labels").rglob("*.txt"):
     for line in txt.read_text().split("\n"):
         if not line.strip(): continue
         cls, *box = line.split()
-        assert cls == "0", f"{txt.name}: class ต้องเป็น 0"
+        assert cls == "41", f"{txt.name}: class ต้องเป็น 41 (cup ใน COCO)"
         assert all(0 <= float(v) <= 1 for v in box), f"{txt.name}: พิกัดต้อง normalize"
 print("label ผ่านการตรวจทั้งหมด")
 ```
@@ -88,26 +88,29 @@ print("train:", len(train_imgs), "| val:", len(val_imgs), "| test:", len(test_im
 ### เซลล์ 6 (code)
 ```python
 from ultralytics import YOLO
-model = YOLO("yolo11n.pt")          # เริ่มจากน้ำหนักที่ผ่าน COCO มาแล้ว
+model = YOLO("yolo11n.pt")          # โมเดลนี้รู้จัก cup (คลาส 41) อยู่แล้ว
 model.train(data="data/cup.yaml", epochs=3, imgsz=640, batch=4, seed=0, plots=True)
 ```
+> `cup.yaml` ใช้สคีมา COCO 80 คลาส (ไม่ใช่ 1 คลาส) — ถ้าลดเหลือ 1 คลาส ultralytics จะ
+> reinit หัว classifier ทิ้งน้ำหนัก `cup` ของ COCO แล้ว 3 epoch/10 รูปจะตรวจไม่เจออะไรเลย
+> (ทดสอบจริงบน 8.3.253 แล้ว) ดู [03-models.md](03-models.md)
 
 ### เซลล์ 7 (markdown) — **จุดที่ห้ามข้าม**
-> เราไม่ได้เทรนโมเดลนี้ขึ้นมาจากศูนย์ เราเริ่มจาก `yolo11n.pt` ที่เห็นรูปมาแล้วแสนกว่ารูป
-> จาก COCO ซึ่งมีคลาส "cup" อยู่แล้ว สิ่งที่รูป 10 ใบของเราทำคือ *ขยับ* โมเดลให้เข้ากับ
-> แก้วในห้องนี้เท่านั้น — ถ้าเริ่มจากศูนย์จริงๆ ด้วยข้อมูลเท่านี้ มันจะตรวจไม่เจออะไรเลย
+> เราไม่ได้สอนโมเดลให้รู้จัก "แก้ว" ตั้งแต่ต้น — มันรู้จักอยู่แล้วจาก COCO (เป็น 1 ใน 80 อย่าง)
+> เราเก็บความรู้เดิมไว้ทั้งหมดแล้วขยับเฉพาะส่วนที่เกี่ยวกับแก้ว ด้วยรูป 10 ใบ
+> ถ้าลบความรู้เดิมแล้วเริ่มจากศูนย์ ข้อมูลเท่านี้จะตรวจไม่เจออะไรเลย
 
 ---
 
 ## 1.3 Result
 
 ### เซลล์ 8 (code) — หลักฐานหลัก
-กริดรูป test 3 ใบพร้อมกล่องที่ทำนาย **และต้องมีอย่างน้อย 1 รูปที่โมเดลพลาด**
-(ถ้าไม่มีให้เพิ่มรูปแก้วแปลกๆ หรือขวดน้ำเข้าไปใน test)
+กริดรูป test 3 ใบพร้อมกล่องที่ทำนาย เรียก `model(p, conf=0.25, classes=[41])`
+(โมเดลจิ๋วเก่งพอบนรูปนิ่ง — บทเรียน "ข้อจำกัด" ย้ายไปอยู่ที่ realtime + พาร์ท 3)
 
 ### เซลล์ 9 (code) — ของแถม
 ```python
-metrics = model.val(split="test")
+metrics = model.val(split="test", classes=[41])
 print("mAP50:", round(metrics.box.map50, 3))
 ```
 markdown กำกับ: *"val มี 2 รูป — ตัวเลขนี้ขยับทีละ 50% ต่อหนึ่งรูป อย่าเอาไปอ้างอิงที่ไหน
@@ -120,13 +123,14 @@ markdown กำกับ: *"val มี 2 รูป — ตัวเลขนี�
 ### เซลล์ 10 (code)
 ```python
 def process_frame(bgr):
-    r = model(bgr, conf=0.25, verbose=False)[0]
+    r = model(bgr, conf=0.25, classes=[41], verbose=False)[0]
     return r.plot()
 
 run_webcam(process_frame, seconds=20)
 ```
-markdown: ให้ลองเอาแก้วเข้า-ออกเฟรม, เอียงแก้ว, เอามือบัง, แล้วลองเอา**ขวดน้ำ**
-มาให้ดู (มันจะทายว่าเป็นแก้ว หรือไม่เห็นเลย — ทั้งสองอย่างคือบทเรียน)
+markdown: ให้ลองเอาแก้วเข้า-ออกเฟรม, เอียงแก้ว, เอามือบัง, แล้วลองเอา**ขวดน้ำ**มาวางข้างๆ
+(จะไม่ขึ้นกรอบ เพราะ `classes=[41]` สั่งให้สนใจแค่แก้ว ทั้งที่โมเดลรู้จักขวด — การกำหนดขอบเขต
+ให้แคบคือส่วนหนึ่งของการทำระบบให้เชื่อถือได้)
 
 ---
 
@@ -185,6 +189,7 @@ def is_holding(hand_bbox, hand_st, cup_boxes):
 
 ### เซลล์ 17 (code) — realtime รวมร่าง
 วาดกล่องแก้ว + โครงมือ + ป้ายใหญ่ `HOLDING` / `NOT HOLDING`
+เรียก detection ด้วย `model(bgr, conf=0.25, classes=[41])` เหมือนเซลล์ 10
 
 ### เซลล์ 18 (markdown) — ส่งไม้ต่อให้แอป
 ให้ผู้เรียนสังเกตด้วยตาตัวเองว่ามีปัญหาอะไรบ้าง แล้วค่อยเฉลย:
