@@ -32,11 +32,17 @@ print("\nพร้อมแล้ว — ไม่ต้องมี GPU ก็�
 def run_webcam(process_frame, seconds=20):
     """เปิดกล้องผ่าน browser ส่งเฟรมมาให้ process_frame(bgr) -> bgr แล้ววาดกลับ"""
 ```
-- ใช้ `google.colab.output.eval_js` + `getUserMedia` ดึงเฟรมเป็น base64
-- แปลงเป็น numpy BGR → เรียก `process_frame` → ส่งภาพที่วาดแล้วกลับไปแสดง
-- มีปุ่ม **Stop** บนหน้าเว็บ และตัดเองเมื่อครบ `seconds`
-- `try/except` รอบ `eval_js`: ถ้าผู้ใช้ปฏิเสธกล้อง ให้ขึ้นข้อความไทยชัดๆ
-  (กด Allow / ย้ายไป Chrome / รันใหม่) ไม่ใช่ traceback ยาวเหยียด
+- ใช้แพตเทิร์นมาตรฐานของ Colab: `createDom()` (สร้าง `<video>` ครั้งเดียว, guard ด้วย
+  `if (div !== null)`) + `requestAnimationFrame` loop ที่ resolve promise พร้อมเฟรมล่าสุด
+  → `eval_js('stream_frame(label, imgData)')` คืนเฟรมทีละอันเป็น base64
+- แปลงเป็น numpy BGR → เรียก `process_frame` → ส่งภาพที่วาดแล้วกลับผ่าน `imgData`
+  ให้ JS แสดงทับ `<video>` (แสดงผลลัพธ์แบบเห็นทันที)
+- **คลิกที่ภาพ** เพื่อหยุด และตัดเองเมื่อครบ `seconds` (Python สั่ง `shutdown = true` แล้ว
+  เรียก `stream_frame` อีกครั้งให้ JS เก็บ DOM)
+- **ห้ามแยกเป็น `webcamStart()` + `webcamFrame()` แบบสองฟังก์ชัน** — เวอร์ชันนั้นเฟรมแรก
+  ยิงก่อน canvas พร้อม เลยพังเงียบ ๆ ("รันแล้วไม่มีอะไรเกิดขึ้น")
+- `try/except` รอบ loop: getUserMedia ถูกปฏิเสธ → propagate มาเป็น exception → พิมพ์
+  ข้อความไทย (กด Allow / ย้าย Chrome / รันใหม่) ไม่ใช่ traceback
 - มี `run_video(path, process_frame)` ติดมาด้วย — ไม่มีไฟล์วิดีโอใน repo
   ใช้เมื่อกล้องพังจริงๆ โดยวิทยากรอัดคลิปสดแล้วอัปโหลดเข้า Colab
 
