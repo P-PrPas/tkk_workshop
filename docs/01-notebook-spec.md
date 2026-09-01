@@ -52,6 +52,19 @@ def run_webcam(process_frame, seconds=20):
 # run_video("clip.mp4", process_frame)
 ```
 
+## เซลล์ 2.5 — ทดสอบกล้อง (code)
+ต่อจาก markdown "การใช้กล้อง" ทันที — เรียก `run_webcam` ด้วย passthrough สั้น ๆ
+```python
+def camera_selftest(bgr):
+    cv2.putText(bgr, "camera OK", (16, 40), cv2.FONT_HERSHEY_SIMPLEX, 1.2, (0, 255, 0), 3)
+    return bgr
+
+run_webcam(camera_selftest, seconds=8)
+```
+เหตุผล: R1 (กล้องถูกบล็อก) เป็นความเสี่ยงอันดับหนึ่ง — ให้ทุกคนกดรันเซลล์นี้ตั้งแต่ต้นคาบ
+(ตาม runbook) จะได้เจอปัญหากล้อง/permission ตอนนาทีที่ 5 ไม่ใช่นาทีที่ 40
+งบเวลาไม่เพิ่ม เพราะ prompt ขออนุญาตกล้องย้ายมาจากพาร์ท 1.4
+
 ## เซลล์ 3 — markdown: พาร์ท 1 Object Detection
 อธิบายด้วยภาษาคน: bbox คืออะไร, conf คืออะไร, ทำไมต้องมี label
 
