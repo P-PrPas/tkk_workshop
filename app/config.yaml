@@ -1,0 +1,7 @@
+model_path: models/best.pt
+cup_class: 0          # ใช้ 41 ถ้า fallback ไปใช้ yolo11m.pt (COCO)
+camera_index: 0
+conf: 0.35
+hold_frames: 5        # ต้องเห็นติดกันกี่เฟรมจึงเปลี่ยนเป็น HOLDING
+release_frames: 8     # ต้องหายกี่เฟรมจึงเลิกเป็น HOLDING
+fist_threshold: 1     # นิ้วเหยียด <= ค่านี้ = กำ
