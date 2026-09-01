@@ -34,13 +34,18 @@ def run_webcam(process_frame, seconds=20):
 ```
 - ใช้แพตเทิร์นมาตรฐานของ Colab: `createDom()` (สร้าง `<video>` ครั้งเดียว, guard ด้วย
   `if (div !== null)`) + `requestAnimationFrame` loop ที่ resolve promise พร้อมเฟรมล่าสุด
-  → `eval_js('stream_frame(label, imgData)')` คืนเฟรมทีละอันเป็น base64
-- แปลงเป็น numpy BGR → เรียก `process_frame` → ส่งภาพที่วาดแล้วกลับผ่าน `imgData`
-  ให้ JS แสดงทับ `<video>` (แสดงผลลัพธ์แบบเห็นทันที)
+  → `eval_js('stream_frame(label, overlay)')` คืนเฟรมทีละอันเป็น base64
+- **`<video>` สดเล่นเองที่ ~30fps ตลอด (ลื่น)** — ไม่ซ่อน ไม่แทนที่
+- แปลงเฟรมเป็น numpy BGR → `process_frame(bgr.copy())` → หา diff กับต้นฉบับ ทำเป็น
+  **PNG โปร่งใส** (เฉพาะกล่อง/ป้าย) ส่งกลับให้ JS วาดเป็น `<img>` absolute ทับ `<video>`
+  → เห็นวิดีโอลื่น + กล่องที่อัปเดตตามความเร็ว inference (ช้ากว่าเล็กน้อยแต่ไม่กระตุก)
+- **`.copy()` ก่อนส่งเข้า process_frame สำคัญ** — hand cells วาดทับ array ในที่ ถ้าไม่ copy
+  diff จะเป็นศูนย์ overlay ว่างเปล่า
 - **คลิกที่ภาพ** เพื่อหยุด และตัดเองเมื่อครบ `seconds` (Python สั่ง `shutdown = true` แล้ว
   เรียก `stream_frame` อีกครั้งให้ JS เก็บ DOM)
-- **ห้ามแยกเป็น `webcamStart()` + `webcamFrame()` แบบสองฟังก์ชัน** — เวอร์ชันนั้นเฟรมแรก
-  ยิงก่อน canvas พร้อม เลยพังเงียบ ๆ ("รันแล้วไม่มีอะไรเกิดขึ้น")
+- **ห้ามแยกเป็น `webcamStart()` + `webcamFrame()`** และ **ห้ามซ่อน `<video>` แล้วโชว์
+  ภาพที่ประมวลผลแล้วแทน** — ทั้งสองแบบทำให้ FPS ที่ผู้เรียนเห็นเท่ากับความเร็ว inference
+  (~3-8fps กระตุก) แทนที่จะเป็น 30fps ของวิดีโอสด
 - `try/except` รอบ loop: getUserMedia ถูกปฏิเสธ → propagate มาเป็น exception → พิมพ์
   ข้อความไทย (กด Allow / ย้าย Chrome / รันใหม่) ไม่ใช่ traceback
 - มี `run_video(path, process_frame)` ติดมาด้วย — ไม่มีไฟล์วิดีโอใน repo
