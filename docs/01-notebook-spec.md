@@ -101,14 +101,13 @@ for txt in Path("data/labels").rglob("*.txt"):
         assert all(0 <= float(v) <= 1 for v in box), f"{txt.name}: พิกัดต้อง normalize"
 print("label ผ่านการตรวจทั้งหมด")
 ```
-จากนั้นแสดงกริด 15 รูปพร้อมกล่อง ground-truth ที่วาดจากไฟล์ `.txt` — ให้ผู้เรียนเห็นว่า
-"label" ไม่ใช่เวทมนตร์ แต่คือตัวเลข 5 ตัวต่อหนึ่งกล่อง และการเห็นกล่องอยู่ถูกที่
+จากนั้นแสดงกริดตัวอย่าง ~15 รูป (รูปในห้องเรียงขึ้นก่อน) พร้อมกล่อง ground-truth จากไฟล์ `.txt`
+— ให้ผู้เรียนเห็นว่า "label" ไม่ใช่เวทมนตร์ แต่คือตัวเลข 5 ตัวต่อหนึ่งกล่อง และการเห็นกล่องอยู่ถูกที่
 คือการตรวจที่ครอบคลุมกว่า assert ข้างบน
 ```python
-print("train:", len(train_imgs), "| val:", len(val_imgs), "| test:", len(test_imgs))
-# 10 / 2 / 3
+print("train:", len(imgs["train"]), "| val:", len(imgs["val"]), "| test:", len(imgs["test"]))
+# ~33 / 2 / 3  (train = ~10 รูปในห้อง + ~23 รูปแก้วทั่วไปจาก COCO; val/test เป็นรูปในห้องล้วน)
 ```
-พร้อมประโยคกำกับ: *"ใช่ครับ สิบรูป จำตัวเลขนี้ไว้"*
 
 ---
 
@@ -118,11 +117,13 @@ print("train:", len(train_imgs), "| val:", len(val_imgs), "| test:", len(test_im
 ```python
 from ultralytics import YOLO
 model = YOLO("yolo11n.pt")          # โมเดลนี้รู้จัก cup (คลาส 41) อยู่แล้ว
-model.train(data="data/cup.yaml", epochs=3, imgsz=640, batch=4, seed=0, plots=True)
+model.train(data="data/cup.yaml", epochs=3, imgsz=640, batch=4, seed=0, amp=False, plots=True)
 ```
 > `cup.yaml` ใช้สคีมา COCO 80 คลาส (ไม่ใช่ 1 คลาส) — ถ้าลดเหลือ 1 คลาส ultralytics จะ
-> reinit หัว classifier ทิ้งน้ำหนัก `cup` ของ COCO แล้ว 3 epoch/10 รูปจะตรวจไม่เจออะไรเลย
+> reinit หัว classifier ทิ้งน้ำหนัก `cup` ของ COCO แล้ว 3 epoch จะตรวจไม่เจออะไรเลย
 > (ทดสอบจริงบน 8.3.253 แล้ว) ดู [03-models.md](03-models.md)
+> **`amp=False`** — บน GPU (T4) ค่า `amp=True` (default) ทำให้ conf ที่ได้ต่ำมาก
+> (ต้องลด threshold เหลือ ~0.01) ปิด mixed-precision แล้ว conf กลับมาปกติ
 
 ### เซลล์ 7 (markdown) — **จุดที่ห้ามข้าม**
 > เราไม่ได้สอนโมเดลให้รู้จัก "แก้ว" ตั้งแต่ต้น — มันรู้จักอยู่แล้วจาก COCO (เป็น 1 ใน 80 อย่าง)
