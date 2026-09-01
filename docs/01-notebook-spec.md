@@ -36,12 +36,14 @@ def run_webcam(process_frame, seconds=20):
 - แปลงเป็น numpy BGR → เรียก `process_frame` → ส่งภาพที่วาดแล้วกลับไปแสดง
 - มีปุ่ม **Stop** บนหน้าเว็บ และตัดเองเมื่อครบ `seconds`
 - `try/except` รอบ `eval_js`: ถ้าผู้ใช้ปฏิเสธกล้อง ให้ขึ้นข้อความไทยชัดๆ
-  ว่าให้ไปใช้เซลล์สำรอง ไม่ใช่ traceback ยาวเหยียด
+  (กด Allow / ย้ายไป Chrome / รันใหม่) ไม่ใช่ traceback ยาวเหยียด
+- มี `run_video(path, process_frame)` ติดมาด้วย — ไม่มีไฟล์วิดีโอใน repo
+  ใช้เมื่อกล้องพังจริงๆ โดยวิทยากรอัดคลิปสดแล้วอัปโหลดเข้า Colab
 
 **เซลล์สำรอง (markdown + code ที่คอมเมนต์ไว้)** ต่อท้ายทันที:
 ```python
-# ถ้ากล้องใช้ไม่ได้ ให้ลบ # ข้างล่างแล้วรันแทน
-# run_video("data/sample.mp4", process_frame)
+# ถ้ากล้องใช้ไม่ได้: อัปโหลดคลิปเข้า Colab แล้วลบ # ข้างล่าง
+# run_video("clip.mp4", process_frame)
 ```
 
 ## เซลล์ 3 — markdown: พาร์ท 1 Object Detection
