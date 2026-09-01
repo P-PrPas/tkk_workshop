@@ -7,7 +7,7 @@
 | ใช้ที่ | โน้ตบุ๊ก (ผู้เรียนเทรนสด) | desktop app |
 | สถาปัตยกรรม | yolo11n | yolo11s |
 | คลาส | สคีมา COCO 80 คลาส, fine-tune เฉพาะ `cup` (41) | 1 คลาส `cup` |
-| ข้อมูล | 10 รูป | Open Images V7 (Coffee cup + Mug) |
+| ข้อมูล | ~10 รูปในห้อง + ~23 รูปแก้วทั่วไป (COCO) | Open Images V7 (Coffee cup + Mug) |
 | epoch | 3 | ~80 |
 | เวลาเทรน | ~15 วินาที (CPU) | ~1-2 ชม. (V100) |
 | เทรนเมื่อไหร่ | ในคาบ | ล่วงหน้า อยู่ใน GitHub Release |
@@ -18,10 +18,10 @@
 
 ```python
 model = YOLO("yolo11n.pt")
-model.train(data="data/cup.yaml", epochs=3, imgsz=640, batch=4, seed=0, plots=True)
+model.train(data="data/cup.yaml", epochs=3, imgsz=640, batch=4, seed=0, amp=False, plots=True)
 ```
 
-- **`yolo11n.pt` ไม่ใช่ `yolo11n.yaml`** — เริ่มจากศูนย์ด้วยข้อมูล 10 รูปจะได้โมเดลที่
+- **`yolo11n.pt` ไม่ใช่ `yolo11n.yaml`** — เริ่มจากศูนย์ด้วยข้อมูลเท่านี้จะได้โมเดลที่
   ตรวจไม่เจออะไรเลย ทำให้พาร์ท 3 ทำงานไม่ได้ ทั้ง workshop พังตาม
 - **`cup.yaml` ต้องเป็นสคีมา COCO 80 คลาส** — ถ้าลดเหลือ 1 คลาส ultralytics ขึ้น
   `Overriding nc=80 with nc=1` แล้ว **reinit หัว classifier** ทิ้งน้ำหนัก `cup` ของ COCO
@@ -30,12 +30,12 @@ model.train(data="data/cup.yaml", epochs=3, imgsz=640, batch=4, seed=0, plots=Tr
   เจอทุกรูป conf 0.4–0.95**
 - label ใน data repo เป็น class **41** / predict ทุกครั้งใส่ `classes=[41]`
 - `seed=0` เพื่อให้ผู้เรียนทุกคนได้ผลใกล้เคียงกัน (ยังไม่ deterministic 100% แต่ช่วยได้)
-- `batch=4` เพราะ train มีแค่ 10 รูป
+- `batch=4` เพราะ train ยังเล็ก · `amp=False` เพราะบน GPU `amp=True` ทำให้ conf ต่ำผิดปกติ
 - ไม่ hardcode `device` — เทรนบน CPU ~15 วิ, ถ้ามี T4 ultralytics ใช้เอง (opt-in ดู 01)
   GPU ช่วยเฉพาะเซลล์กล้อง realtime ไม่ใช่ตอนเทรน
 
 **ข้อความที่ต้องพูดหน้าห้อง:** โมเดลรู้จัก "แก้ว" อยู่แล้วจาก COCO (คลาส 41)
-เราเก็บความรู้เดิมไว้แล้วขยับเฉพาะส่วนนั้นด้วยรูป 10 ใบ — นั่นคือ transfer learning ของจริง
+เราเก็บความรู้เดิมไว้แล้วขยับเฉพาะส่วนนั้นด้วยรูปไม่กี่สิบใบ — นั่นคือ transfer learning ของจริง
 
 ---
 
@@ -66,7 +66,7 @@ ds.export(
 - ต้อง map ทั้ง `Coffee cup` และ `Mug` → `cup` ก่อน export ไม่งั้นได้ 2 คลาส
   แล้ว app จะอ่าน class id ผิด
 - โหลด ~12k ภาพ ใช้เวลาและแบนด์วิดท์พอสมควร — เริ่มแต่เนิ่นๆ
-- **รวมรูป 15 ใบของเราเข้าไปใน train ด้วย** เพื่อให้แม่นกับห้องจริง
+- **รวมรูปในห้องของเราเข้าไปใน train ด้วย** เพื่อให้แม่นกับห้องจริง
   (สคริปต์ remap label จาก class 41 → 0 ให้อัตโนมัติ)
 
 ### เทรน
