@@ -35,7 +35,8 @@
 ```
 Colab notebook (ผู้เรียน)          Desktop app (วิทยากร)
 ─────────────────────────          ─────────────────────
-yolo11n 3 epoch / 10 รูป           yolo11s เทรนเต็มจาก Open Images
+yolo11n fine-tune class 41         yolo11s เทรนเต็มจาก Open Images
+  3 epoch / 10 รูป                    (1 class ได้ เพราะข้อมูลเยอะพอ)
 MediaPipe HandLandmarker            MediaPipe HandLandmarker (เหมือนกัน)
 กติกาต่อเฟรม ไม่มีความจำ            ByteTrack + state machine + hysteresis
 JS webcam ~3-8 FPS                  threaded capture, FPS budget
@@ -48,8 +49,9 @@ JS webcam ~3-8 FPS                  threaded capture, FPS budget
 | Runtime | Google Colab | ไม่ต้องติดตั้งอะไรบนเครื่องผู้เรียน |
 | Realtime | JS webcam loop → helper `run_webcam()` ตัวเดียว | `cv2.imshow` / `VideoCapture(0)` ใช้ไม่ได้บน Colab |
 | Dataset จิ๋ว | 15 รูปพร้อม label YOLO → 10/2/3 | เจ้าของงานเตรียมให้ ไม่มีขั้นตอน label |
-| คลาส | 1 class `cup` = แก้วดื่มทุกแบบ ไม่รวมขวด | yaml ง่าย, logic ข้อ 3 ง่าย, ขวดกลายเป็น teaching moment |
-| น้ำหนักตั้งต้น | `yolo11n.pt` (COCO) | เริ่มจากศูนย์ = ตรวจไม่เจออะไรเลย = พาร์ท 3 พัง |
+| คลาส | ใช้สคีมา COCO เดิม 80 คลาส, label แก้วเป็น **class 41** (`cup`) | ลด yaml เหลือ 1 คลาส = ultralytics reinit หัว classifier ทิ้ง = 3 epoch/10 รูป ตรวจไม่เจออะไร (ทดสอบแล้ว) |
+| น้ำหนักตั้งต้น | `yolo11n.pt` (COCO) เก็บหัว 80 คลาสไว้ | reinit หัว = ทิ้งน้ำหนัก `cup` ที่ COCO เทรนมา = พาร์ท 3 พัง |
+| กรองผลลัพธ์ | `classes=[41]` ทุกครั้งที่เรียก `model(...)` | โชว์เฉพาะแก้ว ไม่ให้ COCO คลาสอื่นรก |
 | Hand pose | MediaPipe HandLandmarker | Ultralytics ปล่อยแค่ body pose 17 จุด ไม่มี hand checkpoint สำเร็จรูป |
 | กติกาถือแก้ว | hand bbox ซ้อน cup bbox **และ** มือกำ | อธิบายเป็นภาษาไทยได้ในประโยคเดียว |
 | โมเดลดี | yolo11s เทรนบน V100 จาก Open Images V7 | เล็กพอรันสดบนแล็ปท็อป |

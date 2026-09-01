@@ -41,6 +41,7 @@ ds.export(
 )
 
 # รวมรูป 15 ใบของเราเข้า train เพื่อให้แม่นกับห้องจริง
+# label ใน data repo เป็น class 41 (COCO) — ที่นี่ dataset เป็น 1 คลาส remap เป็น 0
 train_img_dir = Path(EXPORT_DIR) / "images" / "train"
 train_lbl_dir = Path(EXPORT_DIR) / "labels" / "train"
 train_img_dir.mkdir(parents=True, exist_ok=True)
@@ -50,7 +51,9 @@ for split in ("train", "val", "test"):
         shutil.copy(img, train_img_dir / img.name)
         lbl = OUR_LABELS / split / (img.stem + ".txt")
         if lbl.exists():
-            shutil.copy(lbl, train_lbl_dir / lbl.name)
+            rows = [f"0 {' '.join(ln.split()[1:])}"
+                    for ln in lbl.read_text().splitlines() if ln.strip()]
+            (train_lbl_dir / lbl.name).write_text("\n".join(rows) + "\n")
 
 print("เสร็จ — dataset อยู่ที่", EXPORT_DIR)
 print("เทรนต่อ:  yolo detect train model=yolo11s.pt data=%s/dataset.yaml epochs=80 "
