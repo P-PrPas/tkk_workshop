@@ -29,23 +29,22 @@ print("\nพร้อมแล้ว — ไม่ต้องมี GPU ก็�
 ## เซลล์ 2 — helper กล้อง (code, ยาวที่สุดในโน้ตบุ๊ก ~60 บรรทัด)
 หัวใจของทั้งไฟล์ เขียนครั้งเดียวใช้ 3 ที่
 ```python
-def run_webcam(process_frame, seconds=20):
-    """เปิดกล้องผ่าน browser ส่งเฟรมมาให้ process_frame(bgr) -> bgr แล้ววาดกลับ"""
+def run_webcam(process_frame, seconds=20, overlay=True):
+    """เปิดกล้องผ่าน browser ส่งเฟรมมาให้ process_frame(bgr) -> bgr"""
 ```
 - ใช้แพตเทิร์นมาตรฐานของ Colab: `createDom()` (สร้าง `<video>` ครั้งเดียว, guard ด้วย
   `if (div !== null)`) + `requestAnimationFrame` loop ที่ resolve promise พร้อมเฟรมล่าสุด
-  → `eval_js('stream_frame(label, overlay)')` คืนเฟรมทีละอันเป็น base64
-- **`<video>` สดเล่นเองที่ ~30fps ตลอด (ลื่น)** — ไม่ซ่อน ไม่แทนที่
-- แปลงเฟรมเป็น numpy BGR → `process_frame(bgr.copy())` → หา diff กับต้นฉบับ ทำเป็น
-  **PNG โปร่งใส** (เฉพาะกล่อง/ป้าย) ส่งกลับให้ JS วาดเป็น `<img>` absolute ทับ `<video>`
-  → เห็นวิดีโอลื่น + กล่องที่อัปเดตตามความเร็ว inference (ช้ากว่าเล็กน้อยแต่ไม่กระตุก)
+  → `eval_js('stream_frame(label, data)')` คืนเฟรมทีละอันเป็น base64 · `label` = FPS จริง
+- **สองโหมด:**
+  - `overlay=True` (ทดสอบกล้อง): `<video>` สดเล่นเองที่ ~30fps · `process_frame` diff กับ
+    ต้นฉบับ ทำเป็น **PNG โปร่งใส** (เฉพาะกล่อง/ป้าย) วาง `<img>` absolute ทับ → ลื่น
+  - `overlay=False` (เซลล์โมเดล 1.4 / 2 / 3): ส่ง**เฟรมที่ประมวลผลแล้วเป็น JPEG ทึบ**
+    ทับ `<video>` → ผู้เรียนเห็น FPS จริงของ CPU (กล่องตรงกับเฟรมเป๊ะ ไม่ลอยตามหลัง)
+    เพราะ inference ช้า (~3-8fps) การโชว์วิดีโอลื่น 30fps จะทำให้กล่องกับภาพไม่ตรงกัน
 - **`.copy()` ก่อนส่งเข้า process_frame สำคัญ** — hand cells วาดทับ array ในที่ ถ้าไม่ copy
-  diff จะเป็นศูนย์ overlay ว่างเปล่า
-- **คลิกที่ภาพ** เพื่อหยุด และตัดเองเมื่อครบ `seconds` (Python สั่ง `shutdown = true` แล้ว
-  เรียก `stream_frame` อีกครั้งให้ JS เก็บ DOM)
-- **ห้ามแยกเป็น `webcamStart()` + `webcamFrame()`** และ **ห้ามซ่อน `<video>` แล้วโชว์
-  ภาพที่ประมวลผลแล้วแทน** — ทั้งสองแบบทำให้ FPS ที่ผู้เรียนเห็นเท่ากับความเร็ว inference
-  (~3-8fps กระตุก) แทนที่จะเป็น 30fps ของวิดีโอสด
+  diff (โหมด overlay) จะเป็นศูนย์
+- **คลิกที่ภาพ** เพื่อหยุด และตัดเองเมื่อครบ `seconds`
+- **ห้ามแยกเป็น `webcamStart()` + `webcamFrame()`** — เฟรมแรกยิงก่อน canvas พร้อม พังเงียบ ๆ
 - `try/except` รอบ loop: getUserMedia ถูกปฏิเสธ → propagate มาเป็น exception → พิมพ์
   ข้อความไทย (กด Allow / ย้าย Chrome / รันใหม่) ไม่ใช่ traceback
 - มี `run_video(path, process_frame)` ติดมาด้วย — ไม่มีไฟล์วิดีโอใน repo

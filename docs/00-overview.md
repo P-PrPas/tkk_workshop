@@ -39,7 +39,7 @@ yolo11n fine-tune class 41         yolo11s เทรนเต็มจาก Ope
   3 epoch / 10 รูป                    (1 class ได้ เพราะข้อมูลเยอะพอ)
 MediaPipe HandLandmarker            MediaPipe HandLandmarker (เหมือนกัน)
 กติกาต่อเฟรม ไม่มีความจำ            ByteTrack + state machine + hysteresis
-JS webcam ~3-8 FPS                  threaded capture, FPS budget
+วิดีโอสด 30fps, โมเดล ~3-8 FPS       threaded capture, FPS budget
 พังก็พัง                            กล้องหลุดแล้วต่อใหม่ได้
 ```
 
@@ -65,7 +65,7 @@ JS webcam ~3-8 FPS                  threaded capture, FPS budget
 | R3 | Wi-Fi ห้องช้า ตอนโหลด weight/dataset | ทุกคนค้างพร้อมกัน | dataset ~5MB, `yolo11n.pt` ~6MB; บอกผู้เรียนรันเซลล์ 0-1 ตั้งแต่ก่อนเริ่ม |
 | R4 | val 2 รูป ทำให้ mAP ไร้ความหมาย | ผู้เรียนเชื่อตัวเลขผิดๆ | โชว์กริดรูปเป็นหลักฐานหลัก + พูดตรงๆ ว่าตัวเลขนี้เชื่อไม่ได้ |
 | R5 | เทรนโมเดลดีไม่ทันวันงาน | ไม่มี app โชว์ | fallback: ใช้ `yolo11m.pt` COCO ตรงๆ (class 41 = cup) แทน best.pt |
-| R6 | 3-8 FPS บน Colab ทำให้ผู้เรียนคิดว่า CV ช้า | สารเพี้ยน | พูดล่วงหน้าว่าคอขวดคือ browser ไม่ใช่โมเดล แล้วให้ app พิสูจน์ |
+| R6 | 3-8 FPS บน Colab ทำให้ผู้เรียนคิดว่า CV ช้า | สารเพี้ยน | คอขวดคือ inference บน CPU ฟรีของ Colab (ยืนยันจากการรันจริง) เซลล์โมเดลโชว์เลข FPS ไว้ตรง ๆ + ทดสอบกล้องแยกให้เห็นว่า pipeline วิดีโอเองลื่น 30fps → ปัญหาอยู่ที่โมเดล/เครื่อง แล้วให้ app บนเครื่องแรงพิสูจน์ |
 
 ## Runbook วันงาน
 **ก่อนงาน 1 วัน**
