@@ -42,42 +42,28 @@ model.train(data="data/cup.yaml", epochs=3, imgsz=640, batch=4, seed=0, amp=Fals
 ## โมเดลดี (เทรนล่วงหน้าบน V100)
 
 ### เตรียมข้อมูล — `tools/build_bigdata.py`
-```python
-import fiftyone as fo
-import fiftyone.zoo as foz
-
-CLASSES = ["Coffee cup", "Mug"]
-
-ds = foz.load_zoo_dataset(
-    "open-images-v7",
-    splits=["train", "validation"],
-    label_types=["detections"],
-    classes=CLASSES,
-    max_samples=12000,
-)
-# รวมสองคลาสเป็น cup คลาสเดียว (class 0) — โมเดลดีเป็น 1 คลาส เพราะข้อมูลเยอะพอ
-ds.export(
-    export_dir="datasets/cup_big",
-    dataset_type=fo.types.YOLOv5Dataset,
-    label_field="detections",
-    classes=["cup"],
-)
+```bash
+python tools/build_bigdata.py               # ดึงครบ ~9.2k รูป train + 236 val (~1.2GB)
+python tools/build_bigdata.py --max-train 2000   # จำกัดจำนวน ถ้าเน็ตช้า
 ```
-- ต้อง map ทั้ง `Coffee cup` และ `Mug` → `cup` ก่อน export ไม่งั้นได้ 2 คลาส
-  แล้ว app จะอ่าน class id ผิด
-- โหลด ~12k ภาพ ใช้เวลาและแบนด์วิดท์พอสมควร — เริ่มแต่เนิ่นๆ
-- **รวมรูปในห้องของเราเข้าไปใน train ด้วย** เพื่อให้แม่นกับห้องจริง
-  (สคริปต์ remap label จาก class 41 → 0 ให้อัตโนมัติ)
+- แหล่งข้อมูล: **COCO 2017 คลาส `cup`** (แก้วมัค/กาแฟ/กระดาษ/ใส ครบ) — ไม่ใช้ Open Images
+  แล้ว เพราะ fiftyone ต้องมี mongod ที่ลงยากบางเครื่อง สคริปต์ใหม่ใช้แค่ `urllib` + `opencv`
+- ดาวน์โหลด: annotations zip 241MB ครั้งเดียว + รูปจาก `images.cocodataset.org`
+  (~5 รูป/วินาที → รูปครบใช้เวลา ~30 นาที เริ่มแต่เนิ่นๆ)
+- output: `datasets/cup_big/{images,labels}/{train,val}/` + `dataset.yaml` (1 คลาส `cup` = 0)
+- **รวมรูปในห้องของเราเข้า train อัตโนมัติ** (ตั้งชื่อ `room_*`, remap label 41 → 0)
+- idempotent: รันซ้ำได้ ข้ามไฟล์ที่โหลดแล้ว
 
 ### เทรน
 ```bash
 yolo detect train model=yolo11s.pt data=datasets/cup_big/dataset.yaml \
-     epochs=80 imgsz=640 batch=32 device=0 patience=15 project=runs seed=0
+     epochs=80 imgsz=640 batch=32 device=0 patience=15 amp=False project=runs seed=0
 ```
 - yolo11s ไม่ใช่ m/l — ต้องรันสดบนแล็ปท็อปวิทยากรที่อาจไม่มี GPU
-- `patience=15` ตัดจบเองถ้าไม่ดีขึ้น
-- เกณฑ์ผ่าน: mAP50 บน validation ของ Open Images **≥ 0.60** และที่สำคัญกว่านั้นคือ
-  ต้อง**ทดสอบด้วยกล้องจริงในห้องจริง** แล้วกล่องนิ่ง ไม่กระพริบ
+- `patience=15` ตัดจบเองถ้าไม่ดีขึ้น · `amp=False` — บน GPU `amp=True` ทำให้ conf ต่ำผิดปกติ (เจอกับโมเดลจิ๋ว)
+- เกณฑ์ผ่าน: `python tools/eval.py runs/detect/train/weights/best.pt` แล้ว
+  **mAP50 บน COCO cup val ≥ 0.60** และที่สำคัญกว่า — **ทดสอบด้วยกล้องจริงในห้องจริง**
+  กล่องต้องนิ่ง ไม่กระพริบ
 
 ### ส่งมอบ
 ```bash
