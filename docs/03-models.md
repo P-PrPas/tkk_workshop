@@ -7,7 +7,7 @@
 | ใช้ที่ | โน้ตบุ๊ก (ผู้เรียนเทรนสด) | desktop app |
 | สถาปัตยกรรม | yolo11n | yolo11s |
 | คลาส | สคีมา COCO 80 คลาส, fine-tune เฉพาะ `cup` (41) | 1 คลาส `cup` |
-| ข้อมูล | ~10 รูปในห้อง + ~23 รูปแก้วทั่วไป (COCO) | Open Images V7 (Coffee cup + Mug) |
+| ข้อมูล | ~10 รูปในห้อง + ~23 รูปแก้วทั่วไป (COCO) | COCO 2017 cup: train 9204 / val 390 |
 | epoch | 3 | ~80 |
 | เวลาเทรน | ~15 วินาที (CPU) | ~1-2 ชม. (V100) |
 | เทรนเมื่อไหร่ | ในคาบ | ล่วงหน้า อยู่ใน GitHub Release |
@@ -43,13 +43,13 @@ model.train(data="data/cup.yaml", epochs=3, imgsz=640, batch=4, seed=0, amp=Fals
 
 ### เตรียมข้อมูล — `tools/build_bigdata.py`
 ```bash
-python tools/build_bigdata.py               # ดึงครบ ~9.2k รูป train + 236 val (~1.2GB)
+python tools/build_bigdata.py               # ดึงครบ: train 9204 (9189 COCO + 15 ในห้อง), val 390, ~1.5GB
 python tools/build_bigdata.py --max-train 2000   # จำกัดจำนวน ถ้าเน็ตช้า
 ```
 - แหล่งข้อมูล: **COCO 2017 คลาส `cup`** (แก้วมัค/กาแฟ/กระดาษ/ใส ครบ) — ไม่ใช้ Open Images
   แล้ว เพราะ fiftyone ต้องมี mongod ที่ลงยากบางเครื่อง สคริปต์ใหม่ใช้แค่ `urllib` + `opencv`
 - ดาวน์โหลด: annotations zip 241MB ครั้งเดียว + รูปจาก `images.cocodataset.org`
-  (~5 รูป/วินาที → รูปครบใช้เวลา ~30 นาที เริ่มแต่เนิ่นๆ)
+  (มี socket timeout กัน server ค้าง · ~15 รูป/วินาที → รูปครบ ~10-15 นาที)
 - output: `datasets/cup_big/{images,labels}/{train,val}/` + `dataset.yaml` (1 คลาส `cup` = 0)
 - **รวมรูปในห้องของเราเข้า train อัตโนมัติ** (ตั้งชื่อ `room_*`, remap label 41 → 0)
 - idempotent: รันซ้ำได้ ข้ามไฟล์ที่โหลดแล้ว
