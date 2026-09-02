@@ -12,12 +12,17 @@
 COCO `cup` = แก้วมัค แก้วกาแฟ แก้วกระดาษ แก้วใส ครบตามที่ต้องการ
 """
 import argparse
+import functools
 import json
 import shutil
+import socket
 import urllib.request
 import zipfile
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
+
+socket.setdefaulttimeout(20)             # กัน urlretrieve ค้างถ้า COCO server ไม่ตอบ
+print = functools.partial(print, flush=True)   # progress ออกทันที ไม่ค้างใน buffer
 
 WORK = Path("datasets/_coco_cache")
 OUT = Path("datasets/cup_big")
@@ -100,7 +105,7 @@ def download_split(split, per, out_split, max_n, workers):
     with ThreadPoolExecutor(max_workers=workers) as ex:
         for i, got in enumerate(ex.map(one, ids), 1):
             ok += got
-            if i % 500 == 0:
+            if i % 200 == 0:
                 print(f"  {out_split}: {i}/{len(ids)}  (สำเร็จ {ok})")
     print(f"{out_split}: {ok}/{len(ids)} รูป")
     return ok
