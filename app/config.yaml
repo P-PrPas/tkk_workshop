@@ -1,7 +1,8 @@
-model_path: models/best.pt
-cup_class: 0          # ใช้ 41 ถ้า fallback ไปใช้ yolo11m.pt (COCO)
-camera_index: 0
-conf: 0.35
-hold_frames: 5        # ต้องเห็นติดกันกี่เฟรมจึงเปลี่ยนเป็น HOLDING
-release_frames: 8     # ต้องหายกี่เฟรมจึงเลิกเป็น HOLDING
-fist_threshold: 1     # นิ้วเหยียด <= ค่านี้ = กำ
+# ค่าที่ต้องจูนหน้างาน — แสงในห้องจริงไม่เคยเหมือนตอนทดสอบ
+model_path: models/best.pt   # แผนสำรอง: yolo11m.pt (โหลดเอง) + cup_class: 41
+cup_class: 0                  # 0 = best.pt (1 คลาส) · 41 = yolo11m.pt (COCO)
+camera_index: 0               # ไม่ติด ลอง 1 หรือ 2
+conf: 0.35                    # ตรวจไม่เจอแก้ว → ลดลง · เจอมั่ว → เพิ่มขึ้น
+hold_frames: 5                # เห็นติดกันกี่เฟรมจึงขึ้น HOLDING
+release_frames: 8             # หายติดกันกี่เฟรมจึงเลิก (มากกว่า hold_frames = ไม่กระพริบ)
+fist_threshold: 1             # นิ้วเหยียด <= ค่านี้ = กำ

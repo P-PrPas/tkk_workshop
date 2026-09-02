@@ -10,8 +10,17 @@
 ## ไฟล์
 ```
 app/
-├── app.py       # ทั้งหมด ~250 บรรทัด
-└── config.yaml  # ค่าที่ต้องปรับหน้างาน
+├── app.py            # ตรรกะทั้งหมด ~230 บรรทัด
+├── config.yaml       # ค่าที่ต้องปรับหน้างาน
+├── requirements.txt  # pin เวอร์ชันให้ตรงกับโน้ตบุ๊ก
+├── test_app.py       # self-check ตรรกะ (hysteresis, box overlap) — ไม่ต้องมีกล้อง
+└── models/best.pt    # โหลดจาก GitHub Release (gitignore ไว้)
+```
+รัน:
+```bash
+pip install -r app/requirements.txt
+gh release download v1 -R P-PrPas/tkk_workshop -p best.pt -D app/models
+python app/app.py
 ```
 
 ไฟล์เดียวโดยตั้งใจ ไม่มี package ไม่มี class hierarchy — วิทยากรต้องเปิดโค้ดโชว์
@@ -37,7 +46,8 @@ fist_threshold: 1     # นิ้วเหยียด <= ค่านี้ = �
 
 ### 1. Tracking ID ต่อเนื่อง
 ```python
-results = model.track(frame, persist=True, tracker="bytetrack.yaml", conf=cfg.conf)
+r = model.track(frame, persist=True, tracker="bytetrack.yaml",
+                conf=cfg["conf"], classes=[cfg["cup_class"]])[0]
 ```
 แก้อาการ "แก้วหายไปหนึ่งเฟรมแล้วกลายเป็นแก้วใบใหม่" แต่ละใบมี ID ติดตัว
 ทำให้พูดได้ว่า "แก้ว #3 ถูกถือมา 4 วินาทีแล้ว" ซึ่งกฎต่อเฟรมทำไม่ได้เลย
@@ -79,7 +89,8 @@ class HoldState:
 | โหลดโมเดลไม่สำเร็จ | บอก path ที่หาไม่เจอ และบอกวิธีโหลดจาก Release |
 
 ### 5. ปุ่มควบคุม
-`q` ออก · `s` บันทึกภาพนิ่ง · `d` สลับโหมด debug (โชว์ conf, track ID, จำนวนนิ้วเหยียด)
+`q` ออก · `s` บันทึกภาพนิ่ง · `d` สลับโหมด debug
+(track ID โชว์ตลอด · debug เพิ่ม conf ต่อแก้ว + จำนวนนิ้วเหยียดต่อมือ)
 
 ## กติกาถือแก้ว
 เหมือนโน้ตบุ๊กทุกประการ — `hand bbox ซ้อน cup bbox` **และ** `มือกำ` — แล้วห่อด้วย

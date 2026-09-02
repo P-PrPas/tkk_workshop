@@ -1,0 +1,6 @@
+# pin ให้ตรงกับโน้ตบุ๊ก (docs/01) — เปลี่ยนเมื่อไหร่ต้องทดสอบแอปใหม่ก่อนวันงาน
+ultralytics==8.3.*
+lap==0.5.*          # bytetrack tracker ต้องใช้ (ไม่งั้น ultralytics ไป auto-install กลางเดโม)
+mediapipe==1.0.1
+opencv-python==4.10.*
+pyyaml==6.*
