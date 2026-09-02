@@ -45,7 +45,7 @@ tkk_workshop/            ← repo นี้
 
 ## คำสั่งที่ใช้บ่อย
 ```bash
-python tools/build_bigdata.py                # ดึง Open Images มาเตรียมเทรนโมเดลดี
+python tools/build_bigdata.py                # ดึง COCO cup มาเตรียมเทรนโมเดลดี
 python app/app.py                            # รันแอป
 git clone --recursive <code repo>            # ฝั่งนักพัฒนา ต้องมี --recursive
 ```

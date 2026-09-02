@@ -35,7 +35,7 @@
 ```
 Colab notebook (ผู้เรียน)          Desktop app (วิทยากร)
 ─────────────────────────          ─────────────────────
-yolo11n fine-tune class 41         yolo11s เทรนเต็มจาก Open Images
+yolo11n fine-tune class 41         yolo11s เทรนเต็มจาก COCO cup
   3 epoch / 10 รูป                    (1 class ได้ เพราะข้อมูลเยอะพอ)
 MediaPipe HandLandmarker            MediaPipe HandLandmarker (เหมือนกัน)
 กติกาต่อเฟรม ไม่มีความจำ            ByteTrack + state machine + hysteresis
@@ -54,7 +54,7 @@ MediaPipe HandLandmarker            MediaPipe HandLandmarker (เหมือน
 | กรองผลลัพธ์ | `classes=[41]` ทุกครั้งที่เรียก `model(...)` | โชว์เฉพาะแก้ว ไม่ให้ COCO คลาสอื่นรก |
 | Hand pose | MediaPipe HandLandmarker | Ultralytics ปล่อยแค่ body pose 17 จุด ไม่มี hand checkpoint สำเร็จรูป |
 | กติกาถือแก้ว | hand bbox ซ้อน cup bbox **และ** มือกำ | อธิบายเป็นภาษาไทยได้ในประโยคเดียว |
-| โมเดลดี | yolo11s เทรนบน V100 จาก Open Images V7 | เล็กพอรันสดบนแล็ปท็อป |
+| โมเดลดี | yolo11s เทรนบน V100 จาก COCO 2017 คลาส cup | เล็กพอรันสดบนแล็ปท็อป |
 | App | วิทยากรรันคนเดียว, โมเดลดีอย่างเดียว ไม่เทียบในแอป | ตัดปัญหา env ของผู้เรียน 20 เครื่อง |
 
 ## ทะเบียนความเสี่ยง
