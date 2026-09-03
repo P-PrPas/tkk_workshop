@@ -3,8 +3,8 @@
 กฎยังเหมือนโน้ตบุ๊ก: มือ (ไม่แบกว้าง) อยู่บนแก้ว → กำลังถือ
 ที่เพิ่มคือวิศวกรรมรอบ ๆ กฎ:
   1. threaded capture — อ่านกล้องอีกเธรด เก็บเฟรมล่าสุด ไม่มีดีเลย์สะสม
-  2. threaded inference — YOLO + MediaPipe อยู่อีกเธรด · จอวาดผลล่าสุดทับเฟรมสด
-     → ภาพลื่น ~เท่า FPS กล้อง แม้ inference จะช้ากว่า
+  2. threaded inference — YOLO + MediaPipe อยู่อีกเธรด วาดผลลงเฟรมที่มันวิเคราะห์
+     main แค่แสดง → จอเดินเท่า detect FPS · กล่องอยู่บนเฟรมที่ถูกต้องเสมอ ไม่ลอยตามหลัง
   3. tracking ID + CupMemory — แก้วที่โดนมือกำบังจนตรวจไม่เจอ ยังจำกล่องไว้ต่อ
   4. HoldState hysteresis — ป้ายไม่กระพริบ (ขึ้นยาก ลงยากกว่า)
   5. จัดการ error จริง — กล้องหลุดต่อใหม่, โมเดล/กล้องหาย ขึ้นข้อความไทย
@@ -16,7 +16,6 @@ import threading
 import time
 import urllib.error
 import urllib.request
-from collections import namedtuple
 from pathlib import Path
 
 import cv2
@@ -148,15 +147,9 @@ class Camera:
 
 
 # ─────────── threaded inference — YOLO + MediaPipe + กติกา ───────────
-Result = namedtuple("Result", "cups hands holding infer_ms")
-# cups  : list[(tid, (x1,y1,x2,y2), coasting)]
-# hands : list[(pts, on_cup)]   pts = list[(x,y)] พิกัดจริง
-Result.EMPTY = Result([], [], False, 0.0)
-
-
 class Analyzer:
-    """เธรดวิเคราะห์ — หยิบเฟรมล่าสุดจากกล้อง รันโมเดล เก็บผลไว้ให้จอไปวาด
-    ไม่รอจอ ไม่บล็อกจอ → จอลื่นเท่า FPS กล้อง"""
+    """เธรดวิเคราะห์ — หยิบเฟรมล่าสุด รันโมเดล **วาดผลลงเฟรมเดียวกัน** เก็บไว้ให้ main แสดง
+    จอจึงเดินเท่า FPS ที่ detect ได้จริง (กระตุกกว่า แต่กล่องอยู่บนเฟรมที่มันคิด ไม่ลอยตามหลัง)"""
 
     def __init__(self, cam, model, hands, cfg):
         self.cam, self.model, self.hands, self.cfg = cam, model, hands, cfg
@@ -165,55 +158,73 @@ class Analyzer:
         self.hold = HoldState(cfg["hold_frames"], cfg["release_frames"])
         self.cups = CupMemory(cfg.get("cup_memory_frames", 15))
         self.lock = threading.Lock()
-        self.result = Result.EMPTY
+        self.frame = None            # เฟรมที่วาดผลแล้ว พร้อมแสดง
+        self.fps = 0.0
+        self.debug = False
         self._stop = False
         self._thread = threading.Thread(target=self._loop, daemon=True)
         self._thread.start()
 
     def _loop(self):
         c = self.cfg
+        prev = time.time()
         while not self._stop:
-            ok, frame = self.cam.read()
-            if not ok or frame is None:
-                time.sleep(0.03)
-                continue
-            t = time.time()
-            h, w = frame.shape[:2]
+            try:
+                ok, frame = self.cam.read()
+                if not ok or frame is None:
+                    with self.lock:
+                        self.frame = draw_waiting("reconnecting camera...")
+                    time.sleep(0.1)
+                    continue
+                h, w = frame.shape[:2]
 
-            r = self.model.track(frame, persist=True, tracker="bytetrack.yaml",
-                                 imgsz=c.get("imgsz", 480), conf=c["conf"], device=self.device,
-                                 classes=[c["cup_class"]], verbose=False)[0]
-            dets = []
-            if r.boxes is not None and r.boxes.id is not None:
-                for box, tid in zip(r.boxes.xyxy.tolist(), r.boxes.id.tolist()):
-                    dets.append((int(tid), box))
-            self.cups.update(dets)
-            cup_boxes = [box for _, box, _ in self.cups.boxes()]
+                r = self.model.track(frame, persist=True, tracker="bytetrack.yaml",
+                                     imgsz=c.get("imgsz", 480), conf=c["conf"],
+                                     device=self.device, classes=[c["cup_class"]],
+                                     verbose=False)[0]
+                dets = []
+                if r.boxes is not None and r.boxes.id is not None:
+                    for box, tid in zip(r.boxes.xyxy.tolist(), r.boxes.id.tolist()):
+                        dets.append((int(tid), box))
+                self.cups.update(dets)
+                cup_boxes = [box for _, box, _ in self.cups.boxes()]
 
-            res = self.hands.detect_for_video(
-                mp.Image(image_format=mp.ImageFormat.SRGB,
-                         data=cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)),
-                int(time.monotonic() * 1000))
-            hands_out, observed = [], False
-            for lm in (res.hand_landmarks or []):
-                on_cup = hand_on_cup(lm, w, h, cup_boxes,
-                                     c.get("grip_open_max", 3), c.get("grip_min_points", 5))
-                observed = observed or on_cup
-                hands_out.append(([(int(p.x * w), int(p.y * h)) for p in lm], on_cup))
+                res = self.hands.detect_for_video(
+                    mp.Image(image_format=mp.ImageFormat.SRGB,
+                             data=cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)),
+                    int(time.monotonic() * 1000))
+                hands_out, observed = [], False
+                for lm in (res.hand_landmarks or []):
+                    on_cup = hand_on_cup(lm, w, h, cup_boxes,
+                                         c.get("grip_open_max", 3), c.get("grip_min_points", 5))
+                    observed = observed or on_cup
+                    hands_out.append(([(int(p.x * w), int(p.y * h)) for p in lm],
+                                      on_cup, count_extended(lm)))
+                holding = self.hold.update(observed)
 
-            holding = self.hold.update(observed)
-            with self.lock:
-                self.result = Result(self.cups.boxes(), hands_out, holding,
-                                     (time.time() - t) * 1000)
+                now = time.time()
+                self.fps = 0.9 * self.fps + 0.1 / max(now - prev, 1e-3)
+                prev = now
+                draw(frame, self.cups.boxes(), hands_out, holding, self.fps, self.debug)
+                with self.lock:
+                    self.frame = frame
+            except Exception as e:
+                if self._stop:
+                    break               # กำลังปิดโปรแกรม — เงียบไว้
+                print("analyzer:", e)
+                time.sleep(0.2)
 
     def latest(self):
         with self.lock:
-            return self.result
+            return None if self.frame is None else self.frame.copy()
 
     def release(self):
         self._stop = True
-        self._thread.join(timeout=2)
-        self.hands.close()          # กัน mediapipe บ่นตอนปิดโปรแกรม
+        self._thread.join(timeout=3)
+        try:
+            self.hands.close()          # กัน mediapipe บ่นตอนปิดโปรแกรม
+        except Exception:
+            pass
 
 
 # ─────────────────────────── setup ───────────────────────────
@@ -284,28 +295,28 @@ def load_hand_landmarker():
 
 
 # ─────────────────────────── วาด ───────────────────────────
-def draw(frame, result, disp_fps, debug):
+def draw(frame, cups, hands, holding, fps, debug):
     h = frame.shape[0]
-    for tid, box, coasting in result.cups:
+    for tid, box, coasting in cups:
         x1, y1, x2, y2 = map(int, box)
         col = (140, 140, 90) if coasting else (255, 180, 0)
         cv2.rectangle(frame, (x1, y1), (x2, y2), col, 2)
         cv2.putText(frame, f"cup #{tid}" + (" (memory)" if coasting else ""),
                     (x1, y1 - 8), cv2.FONT_HERSHEY_SIMPLEX, 0.6, col, 2)
-    for pts, on_cup in result.hands:
+    for pts, on_cup, n_ext in hands:
         col = (0, 255, 0) if on_cup else (200, 200, 200)
         for a, b in HAND_EDGES:
             cv2.line(frame, pts[a], pts[b], col, 2)
         for x, y in pts:
             cv2.circle(frame, (x, y), 3, col, -1)
+        if debug:
+            cv2.putText(frame, f"ext:{n_ext}", (pts[0][0], pts[0][1] + 20),
+                        cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 255, 255), 2)
 
-    text = "HOLDING" if result.holding else "NOT HOLDING"
-    cv2.putText(frame, text, (20, 55), cv2.FONT_HERSHEY_SIMPLEX, 1.5,
-                (0, 200, 0) if result.holding else (0, 0, 255), 4)
-    hud = f"{disp_fps:4.1f} FPS"
-    if debug:
-        hud += f"   infer {result.infer_ms:5.0f} ms"
-    cv2.putText(frame, hud, (20, h - 18), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (255, 255, 255), 2)
+    cv2.putText(frame, "HOLDING" if holding else "NOT HOLDING", (20, 55),
+                cv2.FONT_HERSHEY_SIMPLEX, 1.5, (0, 200, 0) if holding else (0, 0, 255), 4)
+    cv2.putText(frame, f"{fps:4.1f} FPS", (20, h - 18),
+                cv2.FONT_HERSHEY_SIMPLEX, 0.7, (255, 255, 255), 2)
 
 
 def draw_waiting(msg):
@@ -338,33 +349,20 @@ def main():
             )
 
     analyzer = Analyzer(cam, model, hands, cfg)
-    debug = False
-    prev = time.time()
-    disp_fps = 0.0
 
+    # main แค่แสดงเฟรมที่ analyzer วาดผลเสร็จแล้ว + รับปุ่ม (จอเดินเท่า detect FPS)
     while True:
-        ok, frame = cam.read()
-        if not ok or frame is None:
-            cv2.imshow(WINDOW, draw_waiting("reconnecting camera..."))
-            if cv2.waitKey(30) & 0xFF == ord("q"):
-                break
-            continue
-
-        now = time.time()
-        disp_fps = 0.9 * disp_fps + 0.1 / max(now - prev, 1e-3)
-        prev = now
-
-        draw(frame, analyzer.latest(), disp_fps, debug)
-        cv2.imshow(WINDOW, frame)
-        k = cv2.waitKey(1) & 0xFF
+        frame = analyzer.latest()
+        cv2.imshow(WINDOW, frame if frame is not None else draw_waiting("starting model..."))
+        k = cv2.waitKey(15) & 0xFF
         if k == ord("q"):
             break
-        elif k == ord("s"):
+        elif k == ord("s") and frame is not None:
             fn = f"shot_{int(time.time())}.png"
             cv2.imwrite(fn, frame)
             print("เซฟภาพ:", fn)
         elif k == ord("d"):
-            debug = not debug
+            analyzer.debug = not analyzer.debug
 
     analyzer.release()
     cam.release()
