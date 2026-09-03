@@ -1,0 +1,12 @@
+# env สำหรับเทรนโมเดลดีบนเครื่องนี้ (V100 = compute 7.0)
+# torch cu130 ที่มากับเครื่องไม่มี kernel ให้ sm_70 — ต้องใช้ cu124 build
+#
+# ติดตั้ง:
+#   python3 -m venv .venv-train
+#   .venv-train/bin/pip install -r tools/requirements-train.txt \
+#       --extra-index-url https://download.pytorch.org/whl/cu124
+torch==2.6.0
+torchvision==0.21.0
+ultralytics==8.3.253
+opencv-python-headless==4.10.0.84   # headless — เครื่องเทรนไม่มีจอ
+lap==0.5.13

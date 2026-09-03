@@ -6,3 +6,5 @@ __pycache__/
 app/hand_landmarker.task
 app/models/
 app/shot_*.png
+.venv-train/
+datasets/_coco_cache/
