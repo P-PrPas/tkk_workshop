@@ -4,7 +4,7 @@
 """
 from types import SimpleNamespace
 
-from app import CupMemory, HoldState, hand_on_cup
+from app import CupMemory, HoldState, hand_on_cup, hand_state
 
 
 def _hand(pts):
@@ -36,6 +36,17 @@ def test_cup_memory():
     assert {t: c for t, _, c in cm.boxes()} == {1: False, 2: False}   # กลับมา = สด
 
 
+def test_hand_state():
+    """โชว์ท่ามือ (พาร์ท 2) — ปลายนิ้วห่างข้อมือ = เหยียด"""
+    wrist = (0.5, 0.9)
+    curled = [wrist] + [(0.5, 0.85)] * 20                       # ทุกจุดชิดข้อมือ
+    assert hand_state(_hand(curled)) == "FIST"
+    splayed = [wrist] + [(0.5, 0.85)] * 20
+    for t in (4, 8, 12, 16, 20):
+        splayed[t] = (0.5, 0.1)                                 # ปลายนิ้วไกลออกไป
+    assert hand_state(_hand(splayed)) == "OPEN"
+
+
 def test_hand_on_cup():
     """แก้วไม่มีหู: มือ *ห่อ* แก้ว (มือดูเหมือนแบ) จุดส่วนใหญ่ทับกล่อง → ต้องนับว่าถือ
     มือชี้จากไกล (ใหญ่กว่าแก้วมาก) หรืออยู่ไม่ตรงแก้ว → ไม่นับ"""
@@ -55,5 +66,6 @@ def test_hand_on_cup():
 if __name__ == "__main__":
     test_hysteresis()
     test_cup_memory()
+    test_hand_state()
     test_hand_on_cup()
     print("ok")
