@@ -32,7 +32,7 @@ HAND_TASK = HERE / "hand_landmarker.task"
 HAND_TASK_URL = ("https://storage.googleapis.com/mediapipe-models/hand_landmarker/"
                  "hand_landmarker/float16/1/hand_landmarker.task")
 HAND_TASK_MIRROR = HERE.parent / "data" / "hand_landmarker.task"
-MODEL_RELEASE_URL = "https://github.com/P-PrPas/tkk_workshop/releases/download/v1/best.pt"
+RELEASE = "https://github.com/P-PrPas/tkk_workshop/releases/download/v1"   # best.pt · best.onnx (imgsz 480)
 
 TIPS = [4, 8, 12, 16, 20]     # ปลายนิ้วทั้งห้า
 PIPS = [2, 6, 10, 14, 18]     # ข้อกลางของแต่ละนิ้ว
@@ -160,6 +160,8 @@ class Analyzer:
 
     def __init__(self, cam, model, hands, cfg):
         self.cam, self.model, self.hands, self.cfg = cam, model, hands, cfg
+        # onnx → บังคับ CPU (onnxruntime CUDA EP พังง่ายบนบางเครื่อง) · pt → ให้ torch เลือกเอง
+        self.device = "cpu" if str(cfg["model_path"]).endswith(".onnx") else None
         self.hold = HoldState(cfg["hold_frames"], cfg["release_frames"])
         self.cups = CupMemory(cfg.get("cup_memory_frames", 15))
         self.lock = threading.Lock()
@@ -179,7 +181,7 @@ class Analyzer:
             h, w = frame.shape[:2]
 
             r = self.model.track(frame, persist=True, tracker="bytetrack.yaml",
-                                 imgsz=c.get("imgsz", 480), conf=c["conf"],
+                                 imgsz=c.get("imgsz", 480), conf=c["conf"], device=self.device,
                                  classes=[c["cup_class"]], verbose=False)[0]
             dets = []
             if r.boxes is not None and r.boxes.id is not None:
@@ -221,35 +223,35 @@ def load_config():
         return yaml.safe_load(f)
 
 
-def _fetch_best_pt():
-    """คืน path ของ best.pt — โหลดจาก Release ถ้ายังไม่มี"""
-    pt = (HERE / "models" / "best.pt")
-    if not pt.exists():
-        pt.parent.mkdir(parents=True, exist_ok=True)
-        print("โหลด best.pt จาก GitHub Release ครั้งแรก...")
+def _fetch(name):
+    """โหลดไฟล์โมเดลจาก GitHub Release มาไว้ที่ app/models/ ถ้ายังไม่มี"""
+    dst = HERE / "models" / name
+    if not dst.exists():
+        dst.parent.mkdir(parents=True, exist_ok=True)
+        print(f"โหลด {name} จาก GitHub Release ครั้งแรก...")
         try:
-            urllib.request.urlretrieve(MODEL_RELEASE_URL, pt)
+            urllib.request.urlretrieve(f"{RELEASE}/{name}", dst)
         except urllib.error.URLError:
             pass
-    return pt if pt.exists() else None
+    return dst if dst.exists() else None
 
 
 def load_model(cfg):
-    """model_path ชี้ไป .onnx → export จาก best.pt ให้อัตโนมัติ (imgsz ตรงกับ config)
-    onnxruntime เร็วกว่า pytorch บน CPU · ถ้ามี GPU ให้ `pip install onnxruntime-gpu`"""
+    """default = best.pt (GPU ใช้ CUDA เอง) · ตั้ง model_path เป็น .onnx สำหรับ CPU (ต้องมี onnxruntime)
+    ไฟล์มาจาก Release ถ้าโหลดไม่ได้ก็ export .onnx จาก best.pt ให้เอง"""
     p = Path(cfg["model_path"])
     if not p.is_absolute():
         p = HERE / p
 
-    if p.suffix == ".onnx" and not p.exists():
-        pt = _fetch_best_pt()
+    if not p.exists() and p.name in ("best.pt", "best.onnx"):
+        _fetch(p.name)
+    if not p.exists() and p.name == "best.onnx":          # Release โหลดไม่ได้ → export เอง
+        pt = _fetch("best.pt")
         if pt:
-            print(f"export {pt.name} -> onnx (imgsz {cfg.get('imgsz', 480)}) ครั้งแรก...")
+            print(f"export best.pt -> onnx (imgsz {cfg.get('imgsz', 480)})...")
             out = YOLO(str(pt)).export(format="onnx", imgsz=cfg.get("imgsz", 480),
                                        dynamic=False, verbose=False)
             Path(out).replace(p)
-    elif p.name == "best.pt" and not p.exists():
-        _fetch_best_pt()
 
     if not p.exists():
         raise SystemExit(
