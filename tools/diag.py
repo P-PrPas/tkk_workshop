@@ -1,5 +1,5 @@
 """diag — เปิดกล้อง แล้วพิมพ์ทุกอย่างที่ app ใช้ตัดสิน HOLDING ทีละเฟรม
-ไว้หาว่าปัญหาอยู่ที่ (ก) ตรวจแก้วไม่เจอ (ข) มือไม่เป็น FIST (ค) กล่องไม่ทับกัน
+ไว้หาว่าปัญหาอยู่ที่ (ก) ตรวจแก้วไม่เจอ (ข) มือแบกว้างไป (ค) จุดมือไม่อยู่บนแก้ว
 
     python tools/diag.py                    # ใช้ best.pt, conf 0.10
     python tools/diag.py yolo11m.pt 0.15    # ลองโมเดล/conf อื่น
@@ -18,7 +18,7 @@ from mediapipe.tasks.python import vision as mp_vision
 from ultralytics import YOLO
 
 sys.path.insert(0, str(Path(__file__).parent.parent / "app"))
-from app import count_extended, hand_bbox, boxes_overlap, HAND_TASK, HAND_TASK_MIRROR  # noqa
+from app import count_extended, hand_on_cup, HAND_TASK, HAND_TASK_MIRROR  # noqa
 
 WEIGHTS = sys.argv[1] if len(sys.argv) > 1 else "app/models/best.pt"
 CONF = float(sys.argv[2]) if len(sys.argv) > 2 else 0.10
@@ -51,13 +51,13 @@ while True:
     hand_info, holding = [], False
     for lm in (res.hand_landmarks or []):
         n = count_extended(lm)
-        st = "FIST" if n <= 1 else "OPEN" if n >= 4 else "MID"
-        hb = hand_bbox(lm, w, h)
-        touch = any(boxes_overlap(hb, c) for c in cups)
-        if st == "FIST" and touch:
-            holding = True
-        hand_info.append(f"{st}(ext={n},touch={touch})")
-        cv2.rectangle(frame, (int(hb[0]), int(hb[1])), (int(hb[2]), int(hb[3])), (0, 255, 0), 2)
+        pts_in = [sum(x1 <= p.x * w <= x2 and y1 <= p.y * h <= y2 for p in lm)
+                  for x1, y1, x2, y2 in cups]
+        on = hand_on_cup(lm, w, h, cups, open_max=3, min_pts=5)
+        holding = holding or on
+        hand_info.append(f"ext={n} ptsInCup={pts_in or '-'} on_cup={on}")
+        for p in lm:
+            cv2.circle(frame, (int(p.x * w), int(p.y * h)), 3, (0, 255, 0), -1)
 
     for (x1, y1, x2, y2), c in zip(cups, confs):
         cv2.rectangle(frame, (int(x1), int(y1)), (int(x2), int(y2)), (255, 180, 0), 2)
