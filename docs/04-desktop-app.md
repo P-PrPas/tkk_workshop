@@ -68,11 +68,12 @@ release_frames: 6            # หายติดกันกี่เฟรม�
 - `main` เบามาก — inference ไม่บล็อกการรับปุ่ม/การแสดงผล
 - **FPS ที่มุมจอ = detect FPS จริง** ไม่ใช่ FPS ของวิดีโอ · yolo11s บน **CPU ≈ 5 FPS**
   บน **CUDA ≈ 5ms** → ตอนเปิดแอปถ้าไม่เจอ GPU จะพิมพ์คำสั่งลง torch cu124 ให้
-- ให้เร็วสุด: **NVIDIA (Win/Linux)** → ลง torch cu124 (ไม่เกิน CUDA ใน `nvidia-smi`) + `device: cuda` ·
-  **Apple Silicon** → torch จาก PyPI มี MPS อยู่แล้ว + `device: mps` · **CPU ล้วน / mac Intel** →
+- `device:` เว้นว่าง = **auto** (`pick_device()` ไล่ cuda → mps → cpu) ไม่ต้องตั้งเอง · ใส่ค่าเมื่ออยากบังคับ
+- ให้ auto เจอ GPU ต้องลง torch ให้ตรงเครื่องก่อน: **NVIDIA (Win/Linux)** torch cu124 (ไม่เกิน CUDA ใน
+  `nvidia-smi`) · **Apple Silicon** torch จาก PyPI มี MPS มาแล้ว · **mac Intel / CPU ล้วน** ไม่มี GPU →
   `model_path: models/best.onnx` + `pip install onnxruntime` · ลด `imgsz` 480→384 ช่วยทุกทาง
-- **ไม่มี CUDA บน macOS** — `pip install torch --index-url .../cu124` ไม่มี wheel ให้ mac ต้องใช้ MPS/onnx
-- ตอนเปิดแอปพิมพ์ `YOLO device: ...` บอกว่าเจออะไร — เจอ GPU แต่ยังขึ้น CPU มักเพราะลง torch ตัว `+cpu`
+- **ไม่มี CUDA บน macOS** — `pip install torch --index-url .../cu124` ไม่มี wheel ให้ mac (auto เลย fallback MPS/CPU)
+- ตอนเปิดแอปพิมพ์ `YOLO device: ...` บอกว่า auto เลือกอะไร — เจอ GPU แต่ยังขึ้น CPU มักเพราะลง torch ตัว `+cpu`
 
 ### 2. Tracking ID + ความจำของแก้ว (`CupMemory`)
 ```python
