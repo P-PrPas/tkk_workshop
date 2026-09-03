@@ -1,5 +1,5 @@
 """diag — เปิดกล้อง แล้วพิมพ์ทุกอย่างที่ app ใช้ตัดสิน HOLDING ทีละเฟรม
-ไว้หาว่าปัญหาอยู่ที่ (ก) ตรวจแก้วไม่เจอ (ข) มือแบกว้างไป (ค) จุดมือไม่อยู่บนแก้ว
+ไว้หาว่าปัญหาอยู่ที่ (ก) ตรวจแก้วไม่เจอ (ข) จุดมือในกล่องแก้วน้อยไป (ค) มือ/แก้วขนาดต่างกันมาก
 
     python tools/diag.py                    # ใช้ best.pt, conf 0.10
     python tools/diag.py yolo11m.pt 0.15    # ลองโมเดล/conf อื่น
@@ -50,14 +50,18 @@ while True:
         int(time.monotonic() * 1000))
     hand_info, holding = [], False
     for lm in (res.hand_landmarks or []):
-        n = count_extended(lm)
-        pts_in = [sum(x1 <= p.x * w <= x2 and y1 <= p.y * h <= y2 for p in lm)
-                  for x1, y1, x2, y2 in cups]
-        on = hand_on_cup(lm, w, h, cups, open_max=3, min_pts=5)
+        hx = [p.x * w for p in lm]; hy = [p.y * h for p in lm]
+        ha = (max(hx) - min(hx)) * (max(hy) - min(hy))
+        per_cup = []
+        for x1, y1, x2, y2 in cups:
+            ca = max((x2 - x1) * (y2 - y1), 1)
+            pin = sum(x1 <= x <= x2 and y1 <= y <= y2 for x, y in zip(hx, hy))
+            per_cup.append(f"pts={pin}/ratio={ha/ca:.1f}")
+        on = hand_on_cup(lm, w, h, cups, min_pts=10, max_ratio=3.0)
         holding = holding or on
-        hand_info.append(f"ext={n} ptsInCup={pts_in or '-'} on_cup={on}")
-        for p in lm:
-            cv2.circle(frame, (int(p.x * w), int(p.y * h)), 3, (0, 255, 0), -1)
+        hand_info.append(f"ext={count_extended(lm)} {per_cup or '-'} on_cup={on}")
+        for x, y in zip(hx, hy):
+            cv2.circle(frame, (int(x), int(y)), 3, (0, 255, 0), -1)
 
     for (x1, y1, x2, y2), c in zip(cups, confs):
         cv2.rectangle(frame, (int(x1), int(y1)), (int(x2), int(y2)), (255, 180, 0), 2)
