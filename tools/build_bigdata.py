@@ -1,7 +1,7 @@
 """เตรียม dataset โมเดลดี: ดึงรูป "cup" จาก COCO 2017 → YOLO format (1 คลาส)
 
-ใช้ครั้งเดียวก่อนเทรน:
-    python tools/build_bigdata.py                 # ดึงครบ (~9.2k รูป train, ~1.2GB)
+ใช้ครั้งเดียวก่อนเทรน (หรือ `bash tools/train.sh` จะเรียกให้):
+    python tools/build_bigdata.py                 # ดึงครบ train ~9.2k / val 390 (~1.5GB)
     python tools/build_bigdata.py --max-train 2000  # จำกัดจำนวน (ทดสอบ/เน็ตช้า)
 
 ผลลัพธ์:
@@ -60,7 +60,7 @@ def fetch_annotations():
 
 def cup_items(ann_json):
     """image_id -> [(cx,cy,w,h) normalized]  เฉพาะรูปที่มี cup"""
-    d = json.load(open(ann_json))
+    d = json.load(open(ann_json, encoding="utf-8"))
     meta = {im["id"]: im for im in d["images"]}
     per = {}
     for a in d["annotations"]:
@@ -122,7 +122,7 @@ def add_room_images():
             shutil.copy(img, img_dir / f"room_{img.stem}.jpg")
             src = OUR_LABELS / split / (img.stem + ".txt")
             rows = [f"0 {' '.join(ln.split()[1:])}"
-                    for ln in src.read_text().splitlines() if ln.strip()]
+                    for ln in src.read_text(encoding="utf-8").splitlines() if ln.strip()]
             (lbl_dir / f"room_{img.stem}.txt").write_text("\n".join(rows) + "\n")
             n += 1
     print(f"เพิ่มรูปในห้อง {n} ใบเข้า train")
@@ -150,15 +150,13 @@ def main():
 
     # ไม่ใส่ path: -> ultralytics อิงโฟลเดอร์ที่ไฟล์ yaml อยู่เป็น root (path: . จะไปอิง cwd)
     (OUT / "dataset.yaml").write_text(
-        "train: images/train\nval: images/val\nnames:\n  0: cup\n")
+        "train: images/train\nval: images/val\nnames:\n  0: cup\n", encoding="utf-8")
 
     n_tr = len(list((OUT / "images" / "train").glob("*.jpg")))
     n_val = len(list((OUT / "images" / "val").glob("*.jpg")))
     print(f"\nเสร็จ — {OUT}/  (train {n_tr} / val {n_val})")
-    print("เทรนต่อ:")
-    print(f"  yolo detect train model=yolo11s.pt data={OUT}/dataset.yaml \\")
-    print("       epochs=80 imgsz=640 batch=32 device=0 patience=15 amp=False seed=0")
-    print("วัดผล:  python tools/eval.py runs/detect/train/weights/best.pt")
+    print("เทรนต่อ:  bash tools/train.sh")
+    print("วัดผล:   .venv-train/bin/python tools/eval.py runs/detect/cup_big/weights/best.pt")
 
 
 if __name__ == "__main__":
