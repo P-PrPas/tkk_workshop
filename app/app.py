@@ -122,7 +122,8 @@ class Camera:
 
 # ─────────────────────────── setup ───────────────────────────
 def load_config():
-    with open(HERE / "config.yaml") as f:
+    # encoding ระบุชัด — Windows default เป็น cp1252 อ่านคอมเมนต์ไทยใน yaml ไม่ได้
+    with open(HERE / "config.yaml", encoding="utf-8") as f:
         return yaml.safe_load(f)
 
 

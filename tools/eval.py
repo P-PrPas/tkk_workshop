@@ -41,7 +41,7 @@ def room_test(model):
         r = model(str(p), conf=CONF, verbose=False)[0]
         n_pred = len(r.boxes)
         split = "val" if f"{ROOM}/val/" in str(p) else "test"
-        n_gt = sum(1 for ln in (ROOM_LBL / split / (p.stem + ".txt")).read_text().splitlines()
+        n_gt = sum(1 for ln in (ROOM_LBL / split / (p.stem + ".txt")).read_text(encoding="utf-8").splitlines()
                    if ln.strip())
         mark = "ok" if n_pred >= n_gt else "MISS"
         all_hit &= n_pred >= n_gt
