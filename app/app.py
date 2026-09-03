@@ -50,13 +50,18 @@ def count_extended(lm):
     return sum(d(lm[t]) > d(lm[p]) for t, p in zip(TIPS, PIPS))
 
 
-def hand_on_cup(lm, w, h, cup_boxes, open_max, min_pts):
-    """มืออยู่บนแก้วไหม — ใช้ได้ทั้งแก้วมีหูและไม่มีหู:
-    (1) มือไม่แบกว้าง (นิ้วเหยียด <= open_max)  (2) จุดมืออย่างน้อย min_pts จุดอยู่ในกล่องแก้ว"""
-    if count_extended(lm) > open_max:
-        return False
+def hand_on_cup(lm, w, h, cup_boxes, min_pts, max_ratio=3.0):
+    """มือ "จับ" แก้วไหม — ไม่ดูว่ากำหรือแบ (แก้วไม่มีหูต้องจับตรง ๆ มือดูเหมือนแบ)
+    ดูจาก: มือกับแก้วขนาดใกล้เคียงกัน (ไม่ใช่มือชี้จากไกล) และจุด landmark >= min_pts
+    จุดตกอยู่ในกล่องแก้ว (มือ *ห่อ* แก้ว จุดส่วนใหญ่เลยทับกล่อง)"""
+    hx = [p.x * w for p in lm]
+    hy = [p.y * h for p in lm]
+    ha = (max(hx) - min(hx)) * (max(hy) - min(hy))
     for x1, y1, x2, y2 in cup_boxes:
-        if sum(x1 <= p.x * w <= x2 and y1 <= p.y * h <= y2 for p in lm) >= min_pts:
+        ca = (x2 - x1) * (y2 - y1)
+        if ca <= 0 or not (1 / max_ratio <= ha / ca <= max_ratio):
+            continue                        # มือใหญ่/เล็กกว่าแก้วมาก = คนละระยะ ไม่ได้จับ
+        if sum(x1 <= x <= x2 and y1 <= y <= y2 for x, y in zip(hx, hy)) >= min_pts:
             return True
     return False
 
@@ -196,7 +201,8 @@ class Analyzer:
                 hands_out, observed = [], False
                 for lm in (res.hand_landmarks or []):
                     on_cup = hand_on_cup(lm, w, h, cup_boxes,
-                                         c.get("grip_open_max", 3), c.get("grip_min_points", 5))
+                                         c.get("grip_min_points", 10),
+                                         c.get("grip_max_size_ratio", 3.0))
                     observed = observed or on_cup
                     hands_out.append(([(int(p.x * w), int(p.y * h)) for p in lm],
                                       on_cup, count_extended(lm)))

@@ -37,22 +37,19 @@ def test_cup_memory():
 
 
 def test_hand_on_cup():
-    """แก้วไม่มีหู: มือประคอง (นิ้วไม่กำแน่น) แต่จุดมืออยู่บนแก้ว → ต้องนับว่าถือ
-    ส่วนมือแบกว้างเอื้อม → ไม่นับ"""
-    W = H = 100
-    cup = [(40, 40, 70, 70)]                            # กล่องแก้ว
-    # มือประคอง: ทุกจุดกองอยู่กลางกล่องแก้ว, นิ้วไม่เหยียด (tip อยู่ใกล้ wrist)
-    grip = _hand([(0.55, 0.55)] * 21)
-    assert hand_on_cup(grip, W, H, cup, open_max=3, min_pts=5)
-    # มือแบกว้าง: ปลายนิ้ว (index 4,8,12,16,20) เหยียดไกลจากข้อมือ (index 0)
-    wide_pts = [(0.55, 0.55)] * 21
-    for t in (4, 8, 12, 16, 20):
-        wide_pts[t] = (0.95, 0.95)                      # ปลายนิ้วไกลออกไป
-    wide = _hand(wide_pts)
-    assert not hand_on_cup(wide, W, H, cup, open_max=3, min_pts=5)
-    # มือกำแต่ไม่อยู่บนแก้ว → ไม่นับ
-    away = _hand([(0.1, 0.1)] * 21)
-    assert not hand_on_cup(away, W, H, cup, open_max=3, min_pts=5)
+    """แก้วไม่มีหู: มือ *ห่อ* แก้ว (มือดูเหมือนแบ) จุดส่วนใหญ่ทับกล่อง → ต้องนับว่าถือ
+    มือชี้จากไกล (ใหญ่กว่าแก้วมาก) หรืออยู่ไม่ตรงแก้ว → ไม่นับ"""
+    W = H = 200
+    cup = [(80, 60, 140, 160)]                          # กล่องแก้ว ~60x100
+    # มือห่อแก้ว: จุด landmark กระจายในกล่องแก้ว (มือขนาดพอ ๆ กับแก้ว)
+    grip = _hand([(0.4 + 0.15 * (i % 3) / 2, 0.35 + 0.55 * (i // 3) / 6) for i in range(21)])
+    assert hand_on_cup(grip, W, H, cup, min_pts=10, max_ratio=3.0)
+    # มือชี้จากไกล = มือเต็มเฟรม (ใหญ่กว่าแก้วมาก) แม้จุดจะทับกล่อง
+    big = _hand([(0.05 + 0.9 * (i % 5) / 4, 0.05 + 0.9 * (i // 5) / 4) for i in range(21)])
+    assert not hand_on_cup(big, W, H, cup, min_pts=10, max_ratio=3.0)
+    # มือขนาดพอดีแต่ไม่ทับแก้ว
+    away = _hand([(0.05 + 0.1 * (i % 3) / 2, 0.8 + 0.15 * (i // 3) / 6) for i in range(21)])
+    assert not hand_on_cup(away, W, H, cup, min_pts=10, max_ratio=3.0)
 
 
 if __name__ == "__main__":
