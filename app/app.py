@@ -28,6 +28,8 @@ HERE = Path(__file__).parent
 HAND_TASK = HERE / "hand_landmarker.task"
 HAND_TASK_URL = ("https://storage.googleapis.com/mediapipe-models/hand_landmarker/"
                  "hand_landmarker/float16/1/hand_landmarker.task")
+HAND_TASK_MIRROR = HERE.parent / "data" / "hand_landmarker.task"   # data submodule
+MODEL_RELEASE_URL = "https://github.com/P-PrPas/tkk_workshop/releases/download/v1/best.pt"
 
 TIPS = [4, 8, 12, 16, 20]     # ปลายนิ้วทั้งห้า
 PIPS = [2, 6, 10, 14, 18]     # ข้อกลางของแต่ละนิ้ว
@@ -128,11 +130,17 @@ def load_model(path):
     p = Path(path)
     if not p.is_absolute():
         p = HERE / p
+    if not p.exists() and p.name == "best.pt":
+        p.parent.mkdir(parents=True, exist_ok=True)
+        print("โหลด best.pt จาก GitHub Release ครั้งแรก...")
+        try:
+            urllib.request.urlretrieve(MODEL_RELEASE_URL, p)
+        except urllib.error.URLError:
+            pass
     if not p.exists():
         raise SystemExit(
             f"\nหาไฟล์โมเดลไม่เจอ: {p}\n"
-            "โหลด best.pt จาก GitHub Release มาวางที่ path นั้น:\n"
-            "  gh release download v1 -R P-PrPas/tkk_workshop -p best.pt -D app/models\n"
+            "โหลดเอง:  gh release download v1 -R P-PrPas/tkk_workshop -p best.pt -D app/models\n"
             "หรือใช้แผนสำรอง: model_path: yolo11m.pt  +  cup_class: 41  ใน config.yaml\n"
         )
     return YOLO(str(p))
@@ -140,14 +148,17 @@ def load_model(path):
 
 def load_hand_landmarker():
     if not HAND_TASK.exists():
-        print("ดาวน์โหลด hand_landmarker.task ครั้งแรก...")
-        try:
-            urllib.request.urlretrieve(HAND_TASK_URL, HAND_TASK)
-        except urllib.error.URLError as e:
-            raise SystemExit(
-                f"\nโหลด hand_landmarker.task ไม่ได้ ({e})\n"
-                f"ดาวน์โหลดเองจาก {HAND_TASK_URL}\nแล้ววางไว้ที่ {HAND_TASK}\n"
-            )
+        if HAND_TASK_MIRROR.exists():
+            HAND_TASK.write_bytes(HAND_TASK_MIRROR.read_bytes())
+        else:
+            print("ดาวน์โหลด hand_landmarker.task ครั้งแรก...")
+            try:
+                urllib.request.urlretrieve(HAND_TASK_URL, HAND_TASK)
+            except urllib.error.URLError as e:
+                raise SystemExit(
+                    f"\nโหลด hand_landmarker.task ไม่ได้ ({e})\n"
+                    f"ดาวน์โหลดเองจาก {HAND_TASK_URL}\nแล้ววางไว้ที่ {HAND_TASK}\n"
+                )
     opts = mp_vision.HandLandmarkerOptions(
         base_options=mp_python.BaseOptions(model_asset_path=str(HAND_TASK)),
         running_mode=mp_vision.RunningMode.VIDEO,

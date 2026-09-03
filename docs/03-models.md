@@ -77,11 +77,17 @@ EPOCHS=10 bash tools/train.sh    # ทดลองสั้น ๆ
   **mAP50 บน COCO cup val ≥ 0.60** และที่สำคัญกว่า — **ทดสอบด้วยกล้องจริงในห้องจริง**
   กล่องต้องนิ่ง ไม่กระพริบ
 
+### ผลจริง (เทรนแล้ว 2026-09-03)
+`yolo11s` 66 epoch (patience ตัดจาก 80) → **COCO cup val mAP50 = 0.707**, mAP50-95 = 0.528,
+P 0.74 / R 0.65 · รูปในห้องทั้ง 5 ใบ conf 0.89–0.92 ไม่มี false positive (ดู `docs/model-eval.jpg`)
+best.pt อยู่ที่ **GitHub Release `v1`**
+
 ### ส่งมอบ
 ```bash
-gh release create v1 runs/detect/train/weights/best.pt --title "cup detector v1"
+gh release create v1 runs/detect/cup_big/weights/best.pt --title "cup detector v1" \
+  --notes "yolo11s / COCO cup + 15 room imgs / mAP50 0.707"
 ```
-แอปโหลดจาก Release URL ไม่เก็บไฟล์ 20MB+ ไว้ใน git
+แอป (`app/app.py`) โหลด best.pt จาก Release URL อัตโนมัติถ้าไม่มีใน `app/models/` — ไม่เก็บใน git
 
 ### แผนสำรอง (R5)
 ถ้าเทรนไม่ทันหรือผลไม่ผ่านเกณฑ์: ใช้ `yolo11m.pt` COCO ตรงๆ แล้วกรองเฉพาะ

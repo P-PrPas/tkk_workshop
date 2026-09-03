@@ -14,14 +14,16 @@ app/
 ├── config.yaml       # ค่าที่ต้องปรับหน้างาน
 ├── requirements.txt  # pin เวอร์ชันให้ตรงกับโน้ตบุ๊ก
 ├── test_app.py       # self-check ตรรกะ (hysteresis, box overlap) — ไม่ต้องมีกล้อง
-└── models/best.pt    # โหลดจาก GitHub Release (gitignore ไว้)
+└── models/best.pt    # โหลดจาก GitHub Release `v1` อัตโนมัติตอนรันครั้งแรก (gitignore ไว้)
 ```
-รัน:
+รัน (บนเครื่องที่มีกล้อง):
 ```bash
+git clone --recursive https://github.com/P-PrPas/tkk_workshop.git
+cd tkk_workshop
 pip install -r app/requirements.txt
-gh release download v1 -R P-PrPas/tkk_workshop -p best.pt -D app/models
-python app/app.py
+python app/app.py          # ครั้งแรกโหลด best.pt + hand_landmarker.task ให้เอง
 ```
+`hand_landmarker.task` ใช้จาก submodule `data/` ถ้ามี ไม่งั้นโหลดจาก MediaPipe
 
 ไฟล์เดียวโดยตั้งใจ ไม่มี package ไม่มี class hierarchy — วิทยากรต้องเปิดโค้ดโชว์
 ได้กลางห้องแล้วผู้เรียนอ่านรู้เรื่องภายในหนึ่งนาที
@@ -86,7 +88,7 @@ class HoldState:
 | เปิดกล้องไม่ได้ตอนเริ่ม | ข้อความไทยบอกว่าต้องทำอะไร แล้วจบโปรแกรม ไม่ใช่ traceback |
 | กล้องหลุดกลางทาง | พยายามต่อใหม่ทุก 1 วินาที แสดง "กำลังเชื่อมต่อกล้องใหม่..." บนจอ |
 | ไม่เจอมือ / ไม่เจอแก้ว | สถานะปกติ ไม่ใช่ error — วาดเฟรมต่อไปเงียบๆ |
-| โหลดโมเดลไม่สำเร็จ | บอก path ที่หาไม่เจอ และบอกวิธีโหลดจาก Release |
+| โหลดโมเดลไม่สำเร็จ | ลองโหลดจาก Release URL เอง; ยังไม่ได้ → บอก path + คำสั่ง `gh release download` + แผนสำรอง yolo11m |
 
 ### 5. ปุ่มควบคุม
 `q` ออก · `s` บันทึกภาพนิ่ง · `d` สลับโหมด debug
