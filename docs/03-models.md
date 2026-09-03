@@ -54,14 +54,26 @@ python tools/build_bigdata.py --max-train 2000   # จำกัดจำนว�
 - **รวมรูปในห้องของเราเข้า train อัตโนมัติ** (ตั้งชื่อ `room_*`, remap label 41 → 0)
 - idempotent: รันซ้ำได้ ข้ามไฟล์ที่โหลดแล้ว
 
+### env สำหรับเทรน (เตรียมไว้แล้วที่ `.venv-train/`)
+เครื่องนี้มี V100 (compute 7.0) แต่ torch ที่มากับเครื่อง (cu130) ไม่มี kernel ให้ `sm_70`
+เลยแยก venv ด้วย torch **cu124** (`torch 2.6.0` มี `sm_70` ใน arch list):
+```bash
+python3 -m venv .venv-train
+.venv-train/bin/pip install -r tools/requirements-train.txt \
+    --extra-index-url https://download.pytorch.org/whl/cu124
+```
+ทดสอบแล้ว: GPU matmul + yolo11s เทรน 1 epoch บน V100 ผ่าน (inference ~3.7ms/รูป)
+
 ### เทรน
 ```bash
-yolo detect train model=yolo11s.pt data=datasets/cup_big/dataset.yaml \
-     epochs=80 imgsz=640 batch=32 device=0 patience=15 amp=False project=runs seed=0
+bash tools/train.sh              # เต็ม 80 epoch
+EPOCHS=10 bash tools/train.sh    # ทดลองสั้น ๆ
 ```
+- **container จำกัด RAM 16GB** → `batch=16 workers=2` (ทดสอบแล้ว) · `batch=32` + workers เยอะ = OOM
+  (VRAM ไม่ใช่ปัญหา — V100 32GB) ถ้า RAM เหลือลอง `BATCH=24 bash tools/train.sh`
+- `amp=False` — `amp=True` บน GPU ทำให้ conf ต่ำผิดปกติ · `patience=15` ตัดจบเองถ้าไม่ดีขึ้น
 - yolo11s ไม่ใช่ m/l — ต้องรันสดบนแล็ปท็อปวิทยากรที่อาจไม่มี GPU
-- `patience=15` ตัดจบเองถ้าไม่ดีขึ้น · `amp=False` — บน GPU `amp=True` ทำให้ conf ต่ำผิดปกติ (เจอกับโมเดลจิ๋ว)
-- เกณฑ์ผ่าน: `python tools/eval.py runs/detect/train/weights/best.pt` แล้ว
+- เกณฑ์ผ่าน: `.venv-train/bin/python tools/eval.py runs/detect/cup_big/weights/best.pt` แล้ว
   **mAP50 บน COCO cup val ≥ 0.60** และที่สำคัญกว่า — **ทดสอบด้วยกล้องจริงในห้องจริง**
   กล่องต้องนิ่ง ไม่กระพริบ
 
