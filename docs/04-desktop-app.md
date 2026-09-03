@@ -40,8 +40,12 @@ UI = หน้าต่าง `cv2` เดียว ไม่ใช้ Qt/Electr
 ```yaml
 model_path: models/best.pt   # GPU → torch ใช้ CUDA เอง · CPU ล้วน → best.onnx (export ให้อัตโนมัติ)
 cup_class: 0                  # 41 ถ้า fallback ไป yolo11m.pt (COCO)
+device:                      # เว้นว่าง=auto · cuda=NVIDIA · mps=Apple Silicon · cpu=บังคับ
 camera_index: 0
 mirror: true                 # selfie view
+window_width: 1280           # ขนาดหน้าต่างตอนเปิด (ลากปรับ / f=เต็มจอ)
+camera_width: 1280           # ขอความละเอียดจากกล้อง — HUD คมบนโปรเจกเตอร์ (เว้นว่าง=ค่ากล้อง)
+camera_height: 720
 imgsz: 480                   # เล็กลง = เร็วขึ้น (384 เร็วกว่า, 640 แม่นกว่านิด)
 conf: 0.25
 cup_memory_frames: 15        # แก้วโดนมือบัง → ใช้กล่องเดิมต่ออีกกี่เฟรม
@@ -64,8 +68,11 @@ release_frames: 6            # หายติดกันกี่เฟรม�
 - `main` เบามาก — inference ไม่บล็อกการรับปุ่ม/การแสดงผล
 - **FPS ที่มุมจอ = detect FPS จริง** ไม่ใช่ FPS ของวิดีโอ · yolo11s บน **CPU ≈ 5 FPS**
   บน **CUDA ≈ 5ms** → ตอนเปิดแอปถ้าไม่เจอ GPU จะพิมพ์คำสั่งลง torch cu124 ให้
-- ให้เร็วสุด: NVIDIA GPU → ลง torch cu124 · CPU ล้วน → `model_path: models/best.onnx`
-  (+ `pip install onnxruntime`) · ลด `imgsz` 480→384 ช่วยทั้งสองทาง
+- ให้เร็วสุด: **NVIDIA (Win/Linux)** → ลง torch cu124 (ไม่เกิน CUDA ใน `nvidia-smi`) + `device: cuda` ·
+  **Apple Silicon** → torch จาก PyPI มี MPS อยู่แล้ว + `device: mps` · **CPU ล้วน / mac Intel** →
+  `model_path: models/best.onnx` + `pip install onnxruntime` · ลด `imgsz` 480→384 ช่วยทุกทาง
+- **ไม่มี CUDA บน macOS** — `pip install torch --index-url .../cu124` ไม่มี wheel ให้ mac ต้องใช้ MPS/onnx
+- ตอนเปิดแอปพิมพ์ `YOLO device: ...` บอกว่าเจออะไร — เจอ GPU แต่ยังขึ้น CPU มักเพราะลง torch ตัว `+cpu`
 
 ### 2. Tracking ID + ความจำของแก้ว (`CupMemory`)
 ```python

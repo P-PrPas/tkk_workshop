@@ -5,5 +5,8 @@ mediapipe==1.0.1
 opencv-python==4.10.*
 pillow==12.*        # HUD วาดตัวหนังสือด้วย PIL + DejaVu (มากับ matplotlib/ultralytics อยู่แล้ว)
 pyyaml==6.*
-# มี NVIDIA GPU: pip install torch --index-url https://download.pytorch.org/whl/cu124
-# CPU ล้วน อยากเร็วขึ้น: pip install onnxruntime แล้วตั้ง model_path: models/best.onnx
+# torch มากับ ultralytics — เร่ง GPU ต้องลงเองให้ตรงเครื่อง แล้วตั้ง device: ใน config.yaml
+#   NVIDIA (Win/Linux): pip install --force-reinstall torch torchvision --index-url https://download.pytorch.org/whl/cu124
+#                       (เลี่ยง cuXXX ที่สูงกว่า "CUDA Version" ใน nvidia-smi) แล้ว device: cuda
+#   Apple Silicon (mac): pip install torch torchvision  (ตัว PyPI มี MPS อยู่แล้ว) แล้ว device: mps
+#   CPU ล้วน: pip install onnxruntime + model_path: models/best.onnx  (บน mac Intel ทางเดียว)

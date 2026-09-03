@@ -179,10 +179,13 @@ class Analyzer:
 
     def __init__(self, cam, model, hands, cfg):
         self.cam, self.model, self.hands, self.cfg = cam, model, hands, cfg
-        # onnx → บังคับ CPU (onnxruntime CUDA EP พังง่ายบนบางเครื่อง) · pt → ให้ torch เลือกเอง
-        self.device = "cpu" if str(cfg["model_path"]).endswith(".onnx") else None
-        self.device_label = ("ONNX · CPU" if self.device == "cpu"
-                             else "CUDA" if torch.cuda.is_available() else "CPU")
+        # device: ค่าใน config ชนะ (cpu / cuda / mps) · ไม่ตั้ง → onnx บังคับ cpu
+        # (onnxruntime CUDA EP พังง่าย), pt ปล่อยให้ torch/ultralytics เลือกเอง
+        onnx = str(cfg["model_path"]).endswith(".onnx")
+        self.device = cfg.get("device") or ("cpu" if onnx else None)
+        auto = ("CUDA" if torch.cuda.is_available()
+                else "MPS" if torch.backends.mps.is_available() else "CPU")
+        self.device_label = (self.device.upper() if self.device else auto) + (" · onnx" if onnx else "")
         self.hold = HoldState(cfg["hold_frames"], cfg["release_frames"])
         self.cups = CupMemory(cfg.get("cup_memory_frames", 15))
         self.lock = threading.Lock()
@@ -314,15 +317,19 @@ def load_model(cfg):
             "โหลดเอง:  gh release download v1 -R P-PrPas/tkk_workshop -p best.pt -D app/models\n"
             "หรือใช้แผนสำรอง: model_path: yolo11m.pt  +  cup_class: 41  ใน config.yaml\n"
         )
-    if p.suffix == ".pt" and not torch.cuda.is_available():
+    if torch.cuda.is_available():
+        print("YOLO device: CUDA", torch.cuda.get_device_name(0))
+    elif torch.backends.mps.is_available():
+        print("YOLO device: MPS (Apple GPU) — ตั้ง  device: mps  ใน config.yaml ให้ ultralytics ใช้")
+    elif p.suffix == ".pt":
         print("──────────────────────────────────────────────────────────────")
-        print("  YOLO จะรันบน CPU → ~5 FPS. ถ้าเครื่องนี้มี NVIDIA GPU ให้ลง torch CUDA:")
-        print("    pip install --force-reinstall torch torchvision \\")
+        print("  YOLO จะรันบน CPU → ~5 FPS.")
+        print("  · NVIDIA GPU (Win/Linux): pip install --force-reinstall torch torchvision \\")
         print("        --index-url https://download.pytorch.org/whl/cu124")
+        print("  · CPU ล้วน: model_path: models/best.onnx  +  pip install onnxruntime")
         print("──────────────────────────────────────────────────────────────")
     else:
-        print("YOLO device:", "CUDA " + torch.cuda.get_device_name(0)
-              if torch.cuda.is_available() else "CPU (onnx)")
+        print("YOLO device: CPU (onnx)")
     return YOLO(str(p))
 
 
