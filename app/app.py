@@ -13,6 +13,7 @@
 รัน:  python app/app.py
 ค่าที่ต้องจูนหน้างานอยู่ใน app/config.yaml ทั้งหมด — ห้ามแก้ไฟล์นี้หน้างาน
 """
+import sys
 import threading
 import time
 import urllib.error
@@ -553,6 +554,10 @@ WINDOW = "cup-holding detector"
 
 
 def main():
+    if sys.version_info[:2] not in ((3, 11), (3, 12), (3, 13)):
+        v = f"{sys.version_info.major}.{sys.version_info.minor}"
+        print(f"เตือน: Python {v} ยังไม่ทดสอบ — สแต็กนี้ใช้ 3.12/3.13 (mediapipe/torch อาจพัง)")
+        print(f"       venv ใหม่:  py -3.12 -m venv .venv  &&  .venv\\Scripts\\activate\n")
     cfg = load_config()
     model = load_model(cfg)
     hands = load_hand_landmarker()
