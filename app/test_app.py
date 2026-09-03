@@ -63,9 +63,20 @@ def test_hand_on_cup():
     assert not hand_on_cup(away, W, H, cup, min_pts=10, max_ratio=3.0)
 
 
+def test_hand_on_cup_eared():
+    """แก้วมีหู: จับที่หู มือเยื้องไป *ข้าง* กล่องแก้ว — ทับกล่องดิบ ๆ ไม่พอ
+    แต่อยู่ในระยะ margin → ต้องนับว่าถือ"""
+    W = H = 200
+    cup = [(100, 50, 150, 160)]                                     # 50x110
+    beside = _hand([(0.35 + 0.20 * (i % 3) / 2, 0.28 + 0.60 * (i // 3) / 6) for i in range(21)])
+    assert not hand_on_cup(beside, W, H, cup, min_pts=12, max_ratio=4.0, margin=0.0)
+    assert hand_on_cup(beside, W, H, cup, min_pts=12, max_ratio=4.0, margin=0.5)
+
+
 if __name__ == "__main__":
     test_hysteresis()
     test_cup_memory()
     test_hand_state()
     test_hand_on_cup()
+    test_hand_on_cup_eared()
     print("ok")
