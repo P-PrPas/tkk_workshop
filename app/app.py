@@ -221,17 +221,36 @@ def load_config():
         return yaml.safe_load(f)
 
 
-def load_model(path):
-    p = Path(path)
-    if not p.is_absolute():
-        p = HERE / p
-    if not p.exists() and p.name == "best.pt":
-        p.parent.mkdir(parents=True, exist_ok=True)
+def _fetch_best_pt():
+    """คืน path ของ best.pt — โหลดจาก Release ถ้ายังไม่มี"""
+    pt = (HERE / "models" / "best.pt")
+    if not pt.exists():
+        pt.parent.mkdir(parents=True, exist_ok=True)
         print("โหลด best.pt จาก GitHub Release ครั้งแรก...")
         try:
-            urllib.request.urlretrieve(MODEL_RELEASE_URL, p)
+            urllib.request.urlretrieve(MODEL_RELEASE_URL, pt)
         except urllib.error.URLError:
             pass
+    return pt if pt.exists() else None
+
+
+def load_model(cfg):
+    """model_path ชี้ไป .onnx → export จาก best.pt ให้อัตโนมัติ (imgsz ตรงกับ config)
+    onnxruntime เร็วกว่า pytorch บน CPU · ถ้ามี GPU ให้ `pip install onnxruntime-gpu`"""
+    p = Path(cfg["model_path"])
+    if not p.is_absolute():
+        p = HERE / p
+
+    if p.suffix == ".onnx" and not p.exists():
+        pt = _fetch_best_pt()
+        if pt:
+            print(f"export {pt.name} -> onnx (imgsz {cfg.get('imgsz', 480)}) ครั้งแรก...")
+            out = YOLO(str(pt)).export(format="onnx", imgsz=cfg.get("imgsz", 480),
+                                       dynamic=False, verbose=False)
+            Path(out).replace(p)
+    elif p.name == "best.pt" and not p.exists():
+        _fetch_best_pt()
+
     if not p.exists():
         raise SystemExit(
             f"\nหาไฟล์โมเดลไม่เจอ: {p}\n"
@@ -299,7 +318,7 @@ WINDOW = "cup-holding   [q] quit  [s] save shot  [d] debug"
 
 def main():
     cfg = load_config()
-    model = load_model(cfg["model_path"])
+    model = load_model(cfg)
     hands = load_hand_landmarker()
     cam = Camera(cfg["camera_index"], mirror=cfg.get("mirror", True))
 
