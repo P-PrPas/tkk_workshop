@@ -3,6 +3,7 @@ model_path: models/best.pt   # มี NVIDIA GPU → torch ใช้ CUDA เอ
                              # CPU ล้วน → models/best.onnx (export ให้อัตโนมัติ, ต้องมี onnxruntime)
                              # แผนสำรอง: yolo11m.pt + cup_class 41
 cup_class: 0                  # 0 = best (1 คลาส) · 41 = yolo11m.pt (COCO)
+device:                       # เว้นว่าง = เลือกเอง · cuda = NVIDIA · mps = Apple Silicon · cpu = บังคับ CPU
 camera_index: 0               # ไม่ติด ลอง 1 หรือ 2
 mirror: true                  # กลับซ้าย-ขวาแบบกระจก (selfie view)
 
