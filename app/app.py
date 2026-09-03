@@ -82,6 +82,31 @@ class HoldState:
         return self.holding
 
 
+class CupMemory:
+    """จำกล่องแก้วรายตัว (ตาม track ID) — ตอนมือกำบังจนตรวจไม่เจอชั่วคราว
+    ก็ยังถือว่าแก้วอยู่ที่เดิมอีก `keep` เฟรม แล้วค่อยลืม
+    นี่คือ "เก็บเป็น state" ที่แก้อาการแก้วหายตอนโดนบัง"""
+
+    def __init__(self, keep):
+        self.keep = keep
+        self.tracks = {}   # tid -> [box, misses]
+
+    def update(self, detections):        # detections: list[(tid, box)]
+        alive = set()
+        for tid, box in detections:
+            self.tracks[tid] = [box, 0]
+            alive.add(tid)
+        for tid, t in list(self.tracks.items()):
+            if tid not in alive:
+                t[1] += 1
+                if t[1] > self.keep:
+                    del self.tracks[tid]
+
+    def boxes(self):
+        """(tid, box, coasting) — coasting=True คือกล่องจากความจำ ไม่ใช่ detection สด"""
+        return [(tid, box, miss > 0) for tid, (box, miss) in self.tracks.items()]
+
+
 # ─────────── threaded capture — เก็บแค่เฟรมล่าสุด กันดีเลย์สะสม ───────────
 class Camera:
     """อ่านกล้องในเธรดแยกแบบไม่หยุด เก็บเฉพาะเฟรมล่าสุด
@@ -217,6 +242,7 @@ def main():
             )
 
     hold = HoldState(cfg["hold_frames"], cfg["release_frames"])
+    cups = CupMemory(cfg.get("cup_memory_frames", 15))
     debug = False
     prev = time.time()
     fps = 0.0
@@ -237,21 +263,23 @@ def main():
         h, w = frame.shape[:2]
         frame_i += 1
 
-        # แก้ว: track เพื่อให้แต่ละใบมี ID ติดตัว (แก้อาการ "หายเฟรมเดียวกลายเป็นใบใหม่")
+        # แก้ว: track ให้แต่ละใบมี ID ติดตัว → CupMemory จำกล่องต่อแม้ detection หายตอนมือบัง
         r = model.track(frame, persist=True, tracker="bytetrack.yaml",
                         conf=cfg["conf"], classes=[cfg["cup_class"]], verbose=False)[0]
+        detections = []
+        if r.boxes is not None and r.boxes.id is not None:
+            for box, tid in zip(r.boxes.xyxy.tolist(), r.boxes.id.tolist()):
+                detections.append((int(tid), box))
+        cups.update(detections)
+
         cup_boxes = []
-        if r.boxes is not None:
-            ids = r.boxes.id.tolist() if r.boxes.id is not None else [None] * len(r.boxes)
-            for box, tid, cf in zip(r.boxes.xyxy.tolist(), ids, r.boxes.conf.tolist()):
-                cup_boxes.append(box)
-                x1, y1, x2, y2 = map(int, box)
-                cv2.rectangle(frame, (x1, y1), (x2, y2), (255, 180, 0), 2)
-                tag = f"cup #{int(tid)}" if tid is not None else "cup"
-                if debug:
-                    tag += f"  {cf:.2f}"
-                cv2.putText(frame, tag, (x1, y1 - 8), cv2.FONT_HERSHEY_SIMPLEX,
-                            0.6, (255, 180, 0), 2)
+        for tid, box, coasting in cups.boxes():
+            cup_boxes.append(box)
+            x1, y1, x2, y2 = map(int, box)
+            col = (140, 140, 90) if coasting else (255, 180, 0)   # จาง = จากความจำ
+            cv2.rectangle(frame, (x1, y1), (x2, y2), col, 2)
+            tag = f"cup #{tid}" + (" (memory)" if coasting else "")
+            cv2.putText(frame, tag, (x1, y1 - 8), cv2.FONT_HERSHEY_SIMPLEX, 0.6, col, 2)
 
         # มือ: MediaPipe โหมด VIDEO ต้องการ timestamp ที่เพิ่มขึ้นเรื่อย ๆ
         rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
@@ -261,11 +289,11 @@ def main():
         observed = False
         for lm in (res.hand_landmarks or []):
             n_ext = count_extended(lm)
-            is_fist = n_ext <= cfg["fist_threshold"]
+            gripping = n_ext <= cfg["fist_threshold"]   # กำแก้วไม่ใช่กำแน่น เกณฑ์เลยหลวม
             hb = hand_bbox(lm, w, h)
-            if is_fist and any(boxes_overlap(hb, c) for c in cup_boxes):
+            if gripping and any(boxes_overlap(hb, c) for c in cup_boxes):
                 observed = True
-            draw_hand(frame, lm, w, h, (0, 255, 0) if is_fist else (200, 200, 200))
+            draw_hand(frame, lm, w, h, (0, 255, 0) if gripping else (200, 200, 200))
             if debug:
                 cv2.putText(frame, f"ext:{n_ext}", (int(hb[0]), int(hb[1]) - 6),
                             cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 255, 0), 2)
