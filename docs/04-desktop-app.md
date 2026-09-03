@@ -36,9 +36,10 @@ UI = หน้าต่าง `cv2.imshow` เดียว ไม่ใช้ Qt
 model_path: models/best.pt
 cup_class: 0          # ใช้ 41 ถ้า fallback ไปใช้ yolo11m.pt (COCO)
 camera_index: 0
-conf: 0.35
-hold_frames: 5        # ต้องเห็นติดกันกี่เฟรมจึงเปลี่ยนเป็น HOLDING
-release_frames: 8     # ต้องหายกี่เฟรมจึงเลิกเป็น HOLDING
+mirror: true          # กลับซ้าย-ขวาแบบกระจก (selfie view)
+conf: 0.25            # ตรวจไม่เจอ → ลด · เจอมั่ว → เพิ่ม
+hold_frames: 3        # ต้องเห็นติดกันกี่เฟรมจึงเปลี่ยนเป็น HOLDING (กล้อง ~5-8 FPS)
+release_frames: 6     # ต้องหายกี่เฟรมจึงเลิกเป็น HOLDING
 fist_threshold: 1     # นิ้วเหยียด <= ค่านี้ = กำ
 ```
 **ทุกตัวเลขที่ต้องจูนหน้างานต้องอยู่ในไฟล์นี้ ห้ามฝังในโค้ด** — แสงในห้องจริงไม่เคย

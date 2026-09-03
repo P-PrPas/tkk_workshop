@@ -230,6 +230,9 @@ def main():
                 break
             continue
 
+        if cfg.get("mirror", True):          # selfie view — ขยับขวาไปขวา
+            frame = cv2.flip(frame, 1)
+
         t = time.time()
         h, w = frame.shape[:2]
         frame_i += 1
