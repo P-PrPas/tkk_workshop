@@ -10,11 +10,14 @@
 ## ไฟล์
 ```
 app/
-├── app.py            # ตรรกะทั้งหมด ~230 บรรทัด
+├── app.py            # ตรรกะทั้งหมด ~270 บรรทัด (Camera / Analyzer / main)
 ├── config.yaml       # ค่าที่ต้องปรับหน้างาน
 ├── requirements.txt  # pin เวอร์ชันให้ตรงกับโน้ตบุ๊ก
-├── test_app.py       # self-check ตรรกะ (hysteresis, box overlap) — ไม่ต้องมีกล้อง
+├── test_app.py       # self-check ตรรกะ (hysteresis / CupMemory / hand_on_cup) — ไม่ต้องมีกล้อง
 └── models/best.pt    # โหลดจาก GitHub Release `v1` อัตโนมัติตอนรันครั้งแรก (gitignore ไว้)
+tools/
+├── diag.py           # เปิดกล้อง พิมพ์สัญญาณทุกเฟรม — ไว้ debug ว่า HOLDING พังตรงไหน
+└── optimize.py       # ลอง export ONNX/OpenVINO แล้ววัดว่าเร็วขึ้นบนเครื่องนี้ไหม
 ```
 รัน (บนเครื่องที่มีกล้อง):
 ```bash
@@ -33,34 +36,44 @@ UI = หน้าต่าง `cv2.imshow` เดียว ไม่ใช้ Qt
 
 ## config.yaml
 ```yaml
-model_path: models/best.pt
-cup_class: 0          # ใช้ 41 ถ้า fallback ไปใช้ yolo11m.pt (COCO)
+model_path: models/best.pt   # หรือ models/best_openvino_model ถ้า optimize.py บอกว่าเร็วกว่า
+cup_class: 0                  # 41 ถ้า fallback ไป yolo11m.pt (COCO)
 camera_index: 0
-mirror: true          # กลับซ้าย-ขวาแบบกระจก (selfie view)
-conf: 0.25            # ตรวจไม่เจอ → ลด · เจอมั่ว → เพิ่ม
-hold_frames: 3        # ต้องเห็นติดกันกี่เฟรมจึงเปลี่ยนเป็น HOLDING (กล้อง ~5-8 FPS)
-release_frames: 6     # ต้องหายกี่เฟรมจึงเลิกเป็น HOLDING
-fist_threshold: 1     # นิ้วเหยียด <= ค่านี้ = กำ
+mirror: true                 # selfie view
+imgsz: 480                   # เล็กลง = เร็วขึ้น (384 เร็วกว่า, 640 แม่นกว่านิด)
+conf: 0.25
+cup_memory_frames: 15        # แก้วโดนมือบัง → ใช้กล่องเดิมต่ออีกกี่เฟรม
+grip_open_max: 3             # นิ้วเหยียด <= ค่านี้ = ยังนับว่ากำ/ประคอง
+grip_min_points: 5           # จุดมือ (จาก 21) ต้องอยู่ในกล่องแก้วอย่างน้อยกี่จุด
+hold_frames: 3               # เห็นติดกันกี่เฟรมจึงขึ้น HOLDING
+release_frames: 6            # หายติดกันกี่เฟรมจึงเลิก (> hold_frames = ไม่กระพริบ)
 ```
 **ทุกตัวเลขที่ต้องจูนหน้างานต้องอยู่ในไฟล์นี้ ห้ามฝังในโค้ด** — แสงในห้องจริงไม่เคย
 เหมือนที่ทดสอบ ต้องปรับได้โดยไม่ต้องแก้โค้ด
 
 ## สิ่งที่แอปทำแต่โน้ตบุ๊กไม่ทำ (นี่คือเนื้อหาของสาร)
 
-### 1. Tracking ID + ความจำของแก้ว (`CupMemory`)
+### 1. Threaded inference — จอลื่นแม้โมเดลช้า
+`Camera` (เธรดอ่านกล้อง) · `Analyzer` (เธรดรัน YOLO + MediaPipe + กติกา เก็บผลล่าสุด) ·
+`main` (วนวาดผลล่าสุดทับเฟรมสด แล้ว imshow)
+- จอวิ่งเท่า FPS กล้อง (~30) · กล่อง/ป้ายอัปเดตช้ากว่า (เท่าที่ inference ทัน) แต่ภาพไม่กระตุก
+- แก้อาการ "ขยับแก้วแล้ว detect ไม่ตาม" ได้บางส่วน (Analyzer หยิบเฟรมล่าสุดเสมอ ไม่สะสมคิว)
+- ลด `imgsz` (640→480→384) และ `tools/optimize.py` (ONNX/OpenVINO) ช่วยเพิ่มอัตรา inference
+
+### 2. Tracking ID + ความจำของแก้ว (`CupMemory`)
 ```python
-r = model.track(frame, persist=True, tracker="bytetrack.yaml",
-                conf=cfg["conf"], classes=[cfg["cup_class"]])[0]
+r = model.track(frame, persist=True, tracker="bytetrack.yaml", imgsz=..., conf=..., classes=[...])[0]
 cups.update([(int(tid), box) for box, tid in ...])   # เก็บกล่องล่าสุดต่อ track ID
 cup_boxes = [box for _, box, _coasting in cups.boxes()]
 ```
 - track ID → แต่ละแก้วมีเลขติดตัว "แก้ว #3 ถูกถือมา 4 วินาทีแล้ว"
-- **`CupMemory`** — พอมือกำแก้วมันจะบัง object detection จนกล่องแก้ว**หาย** → เก็บกล่องล่าสุด
-  ไว้ต่ออีก `cup_memory_frames` เฟรม (~3 วิ) กล่องที่ใช้ความจำวาดสีจาง + ป้าย `(memory)`
-  → กฎ `is_holding` ยังมีกล่องให้เช็ก ไม่หลุด HOLDING ตอนกำแก้วแน่น ๆ
-- เกณฑ์ "กำ" หลวมลง: `count_extended <= 2` (กำแก้วไม่ใช่กำหมัดแน่น) จูนที่ `fist_threshold`
+- **`CupMemory`** — มือกำแก้วบัง object detection จนกล่องแก้ว**หาย** → เก็บกล่องล่าสุดต่ออีก
+  `cup_memory_frames` เฟรม (~1 วิที่ 15 FPS) วาดสีจาง + ป้าย `(memory)` → กติกายังมีกล่องให้เช็ก
+- **`hand_on_cup`** แทน "กำ + bbox ทับ" — ใช้ได้ทั้งแก้วมีหูและไม่มีหู: มือไม่แบกว้าง
+  (`count_extended <= grip_open_max`) **และ** จุด landmark >= `grip_min_points` จุดอยู่ในกล่องแก้ว
+  (แก้วไม่มีหูต้องกำตรง ๆ มือไม่เหมือนกำหมัด — เช็กจากจุดที่อยู่บนแก้วแทน)
 
-### 2. State machine + hysteresis
+### 3. State machine + hysteresis
 ```python
 class HoldState:
     """กันป้ายกระพริบ: ขึ้นยาก ลงยากกว่า"""
@@ -78,15 +91,8 @@ class HoldState:
             if self.misses >= self.off_n: self.holding = False
         return self.holding
 ```
-ค่า on/off ไม่เท่ากันโดยตั้งใจ (5 ขึ้น / 8 ลง) — ถ้าเท่ากันจะยังกระพริบตรงขอบ
-นี่คือ hysteresis และเป็นคำที่ควรพูดออกไปตรงๆ หน้าห้อง
-
-### 3. Threaded capture + FPS budget
-- เธรดหนึ่งอ่านกล้องแบบไม่หยุด เก็บเฉพาะ**เฟรมล่าสุด** (ทิ้งเฟรมเก่า)
-- เธรดหลักทำ inference กับเฟรมล่าสุดเท่านั้น
-- ถ้าไม่ทำ: `cap.read()` จะไล่คิวเฟรมเก่า ทำให้ภาพ**ดีเลย์สะสม**เรื่อยๆ จนมือขยับ
-  ไปแล้วสองวินาทีป้ายเพิ่งเปลี่ยน — อาการคลาสสิกที่ demo ทุกตัวมี
-- แสดง FPS และ ms ต่อเฟรมมุมจอตลอดเวลา
+ค่า on/off ไม่เท่ากันโดยตั้งใจ (3 ขึ้น / 6 ลง) — ถ้าเท่ากันจะยังกระพริบตรงขอบ
+นี่คือ hysteresis และเป็นคำที่ควรพูดออกไปตรงๆ หน้าห้อง · ยังดูดซับเฟรมที่ pose วืบหายด้วย
 
 ### 4. จัดการ error จริง
 | เหตุการณ์ | พฤติกรรม |
@@ -97,28 +103,27 @@ class HoldState:
 | โหลดโมเดลไม่สำเร็จ | ลองโหลดจาก Release URL เอง; ยังไม่ได้ → บอก path + คำสั่ง `gh release download` + แผนสำรอง yolo11m |
 
 ### 5. ปุ่มควบคุม
-`q` ออก · `s` บันทึกภาพนิ่ง · `d` สลับโหมด debug
-(track ID โชว์ตลอด · debug เพิ่ม conf ต่อแก้ว + จำนวนนิ้วเหยียดต่อมือ)
+`q` ออก · `s` บันทึกภาพนิ่ง · `d` สลับโหมด debug (โชว์ ms ของ inference มุมจอ)
 
 ## กติกาถือแก้ว
-แกนเดียวกับโน้ตบุ๊ก — `hand bbox ซ้อน cup bbox` **และ** `มือกำ` ห่อด้วย `HoldState`
+แกนเดียวกับโน้ตบุ๊ก — มือ (ไม่แบกว้าง) อยู่บนแก้ว ห่อด้วย `HoldState`
 สิ่งที่เพิ่มเข้ามาไม่ได้ทำให้ *กฎ* ฉลาดขึ้น แต่ทำให้ *สัญญาณเข้ากฎ* ไม่หลุด:
-- `CupMemory` — แก้อาการกล่องแก้วหายตอนมือกำบัง (เก็บกล่องล่าสุดไว้ต่อ)
-- เกณฑ์ "กำ" หลวมลงเป็น `<= 2 นิ้วเหยียด` — pose บางเฟรมไม่อ่านว่ากำแน่น แต่กำแก้วจริง
-- `HoldState` ดูดซับเฟรมที่ pose วืบหาย (ต้องพลาด `release_frames` เฟรมติดจึงเลิก)
+- `CupMemory` — แก้อาการกล่องแก้วหายตอนมือกำบัง
+- `hand_on_cup` เช็กจาก "จุดมืออยู่บนแก้ว" แทน "มือกำ" — แก้วไม่มีหูก็จับได้
+- `HoldState` ดูดซับเฟรมที่ pose/detection วืบหาย
 
-**ประเด็นที่ต้องเน้นหน้าห้อง: กฎ 2 บรรทัดเท่าเดิม — ที่เพิ่มคือ state + memory รอบ ๆ กฎ**
+**ประเด็นที่ต้องเน้นหน้าห้อง: กฎเท่าเดิม — ที่เพิ่มคือ thread + state + memory รอบ ๆ กฎ**
 
 ## สิ่งที่จงใจไม่ทำ
 - ไม่ทำ installer / py2app / PyInstaller — วิทยากรรัน `python app/app.py` เอง
 - ไม่มี GUI framework
-- ไม่มี ONNX/TensorRT — ยังไม่ถึงจุดที่ FPS เป็นปัญหา
+- ONNX/OpenVINO เป็น *ทางเลือก* ผ่าน `tools/optimize.py` (บาง CPU เร็วขึ้น บางเครื่องไม่) ไม่ใช่ค่า default
 - ไม่รองรับหลายกล้อง
 - ไม่บันทึกวิดีโอ/log ลงไฟล์ — `s` เซฟภาพนิ่งพอแล้ว
 
 ## เกณฑ์ว่าเสร็จ
 - [ ] รันต่อเนื่อง 5 นาทีโดยไม่ crash
-- [ ] ≥ 12 FPS บนแล็ปท็อปที่จะใช้จริง
+- [ ] จอลื่น ~เท่า FPS กล้อง (ไม่กระตุก) แม้ inference จะ ~10 fps
 - [ ] ป้าย HOLDING ไม่กระพริบเมื่อถือแก้วนิ่ง
 - [ ] ถอดปลั๊กกล้องแล้วเสียบกลับ → กลับมาทำงานเองโดยไม่ต้องรีสตาร์ท
 - [ ] แก้วสองใบพร้อมกัน แต่ละใบมี ID ของตัวเองที่ไม่สลับกัน

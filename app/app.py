@@ -1,11 +1,13 @@
 """คนถือแก้ว — เวอร์ชัน "ใช้งานได้จริง" ที่วิทยากรรันโชว์หน้าห้อง
 
-กฎถือแก้วเหมือนโน้ตบุ๊กเป๊ะ: กรอบมือซ้อนกรอบแก้ว **และ** มือกำ
-ที่เพิ่มเข้ามาคือวิศวกรรมรอบ ๆ กฎ:
-  1. tracking ID ต่อเนื่อง (bytetrack) — แก้วแต่ละใบมีเลขติดตัว
-  2. state machine + hysteresis — ป้ายไม่กระพริบ (ขึ้นยาก ลงยากกว่า)
-  3. threaded capture — อ่านกล้องอีกเธรด เก็บเฟรมล่าสุด ไม่มีดีเลย์สะสม
-  4. จัดการ error จริง — กล้องหลุดแล้วต่อใหม่, โมเดลหาย/กล้องเปิดไม่ได้ ขึ้นข้อความไทย
+กฎยังเหมือนโน้ตบุ๊ก: มือ (ไม่แบกว้าง) อยู่บนแก้ว → กำลังถือ
+ที่เพิ่มคือวิศวกรรมรอบ ๆ กฎ:
+  1. threaded capture — อ่านกล้องอีกเธรด เก็บเฟรมล่าสุด ไม่มีดีเลย์สะสม
+  2. threaded inference — YOLO + MediaPipe อยู่อีกเธรด · จอวาดผลล่าสุดทับเฟรมสด
+     → ภาพลื่น ~เท่า FPS กล้อง แม้ inference จะช้ากว่า
+  3. tracking ID + CupMemory — แก้วที่โดนมือกำบังจนตรวจไม่เจอ ยังจำกล่องไว้ต่อ
+  4. HoldState hysteresis — ป้ายไม่กระพริบ (ขึ้นยาก ลงยากกว่า)
+  5. จัดการ error จริง — กล้องหลุดต่อใหม่, โมเดล/กล้องหาย ขึ้นข้อความไทย
 
 รัน:  python app/app.py
 ค่าที่ต้องจูนหน้างานอยู่ใน app/config.yaml ทั้งหมด — ห้ามแก้ไฟล์นี้หน้างาน
@@ -14,6 +16,7 @@ import threading
 import time
 import urllib.error
 import urllib.request
+from collections import namedtuple
 from pathlib import Path
 
 import cv2
@@ -28,7 +31,7 @@ HERE = Path(__file__).parent
 HAND_TASK = HERE / "hand_landmarker.task"
 HAND_TASK_URL = ("https://storage.googleapis.com/mediapipe-models/hand_landmarker/"
                  "hand_landmarker/float16/1/hand_landmarker.task")
-HAND_TASK_MIRROR = HERE.parent / "data" / "hand_landmarker.task"   # data submodule
+HAND_TASK_MIRROR = HERE.parent / "data" / "hand_landmarker.task"
 MODEL_RELEASE_URL = "https://github.com/P-PrPas/tkk_workshop/releases/download/v1/best.pt"
 
 TIPS = [4, 8, 12, 16, 20]     # ปลายนิ้วทั้งห้า
@@ -40,7 +43,7 @@ HAND_EDGES = [(0, 1), (1, 2), (2, 3), (3, 4), (0, 5), (5, 6), (6, 7), (7, 8),
 # ponytail: OpenCV วาดฟอนต์ไทยไม่ได้ ข้อความบนจอเลยเป็นอังกฤษ ส่วนไทยไปที่ terminal
 
 
-# ─────────────────────── กติกา (ยกมาจากโน้ตบุ๊กตรง ๆ) ───────────────────────
+# ─────────────────────────── กติกาถือแก้ว ───────────────────────────
 def count_extended(lm):
     """นับนิ้วที่เหยียด: ปลายนิ้วอยู่ไกลจากข้อมือกว่าข้อกลาง (ทนการหมุนมือ)"""
     w = lm[0]
@@ -48,20 +51,20 @@ def count_extended(lm):
     return sum(d(lm[t]) > d(lm[p]) for t, p in zip(TIPS, PIPS))
 
 
-def hand_bbox(lm, w, h):
-    xs = [p.x * w for p in lm]
-    ys = [p.y * h for p in lm]
-    return [min(xs), min(ys), max(xs), max(ys)]
+def hand_on_cup(lm, w, h, cup_boxes, open_max, min_pts):
+    """มืออยู่บนแก้วไหม — ใช้ได้ทั้งแก้วมีหูและไม่มีหู:
+    (1) มือไม่แบกว้าง (นิ้วเหยียด <= open_max)  (2) จุดมืออย่างน้อย min_pts จุดอยู่ในกล่องแก้ว"""
+    if count_extended(lm) > open_max:
+        return False
+    for x1, y1, x2, y2 in cup_boxes:
+        if sum(x1 <= p.x * w <= x2 and y1 <= p.y * h <= y2 for p in lm) >= min_pts:
+            return True
+    return False
 
 
-def boxes_overlap(a, b):
-    return a[0] < b[2] and b[0] < a[2] and a[1] < b[3] and b[1] < a[3]
-
-
-# ─────────────────────── state machine + hysteresis ───────────────────────
 class HoldState:
-    """กันป้ายกระพริบ: ต้องเห็นติดกัน on_n เฟรมจึงขึ้น HOLDING,
-    ต้องหายติดกัน off_n เฟรมจึงเลิก — on_n < off_n โดยตั้งใจ"""
+    """กันป้ายกระพริบ: เห็นติดกัน on_n เฟรมจึงขึ้น HOLDING,
+    หายติดกัน off_n เฟรมจึงเลิก — on_n < off_n โดยตั้งใจ (hysteresis)"""
 
     def __init__(self, on_n, off_n):
         self.on_n, self.off_n = on_n, off_n
@@ -83,9 +86,8 @@ class HoldState:
 
 
 class CupMemory:
-    """จำกล่องแก้วรายตัว (ตาม track ID) — ตอนมือกำบังจนตรวจไม่เจอชั่วคราว
-    ก็ยังถือว่าแก้วอยู่ที่เดิมอีก `keep` เฟรม แล้วค่อยลืม
-    นี่คือ "เก็บเป็น state" ที่แก้อาการแก้วหายตอนโดนบัง"""
+    """จำกล่องแก้วรายตัว (ตาม track ID) — มือกำบังจนตรวจไม่เจอชั่วคราว
+    ก็ยังถือว่าแก้วอยู่ที่เดิมอีก `keep` เฟรม แล้วค่อยลืม"""
 
     def __init__(self, keep):
         self.keep = keep
@@ -109,11 +111,11 @@ class CupMemory:
 
 # ─────────── threaded capture — เก็บแค่เฟรมล่าสุด กันดีเลย์สะสม ───────────
 class Camera:
-    """อ่านกล้องในเธรดแยกแบบไม่หยุด เก็บเฉพาะเฟรมล่าสุด
-    กล้องหลุด → พยายามต่อใหม่ทุก 1 วินาที (`ok` เป็น False ระหว่างนั้น)"""
+    """อ่านกล้องในเธรดแยกแบบไม่หยุด เก็บเฉพาะเฟรมล่าสุด (mirror ให้ด้วยถ้า mirror=True)
+    กล้องหลุด → ต่อใหม่ทุก 1 วินาที (`read()[0]` เป็น False ระหว่างนั้น)"""
 
-    def __init__(self, index):
-        self.index = index
+    def __init__(self, index, mirror=True):
+        self.index, self.mirror = index, mirror
         self.lock = threading.Lock()
         self.frame = None
         self.ok = False
@@ -123,9 +125,7 @@ class Camera:
 
     def _loop(self):
         while not self._stop:
-            ret, f = (False, None)
-            if self.cap.isOpened():
-                ret, f = self.cap.read()
+            ret, f = (self.cap.read() if self.cap.isOpened() else (False, None))
             if not ret:
                 with self.lock:
                     self.ok = False
@@ -133,6 +133,8 @@ class Camera:
                 time.sleep(1.0)
                 self.cap = cv2.VideoCapture(self.index)
                 continue
+            if self.mirror:
+                f = cv2.flip(f, 1)
             with self.lock:
                 self.frame, self.ok = f, True
 
@@ -143,6 +145,73 @@ class Camera:
     def release(self):
         self._stop = True
         self.cap.release()
+
+
+# ─────────── threaded inference — YOLO + MediaPipe + กติกา ───────────
+Result = namedtuple("Result", "cups hands holding infer_ms")
+# cups  : list[(tid, (x1,y1,x2,y2), coasting)]
+# hands : list[(pts, on_cup)]   pts = list[(x,y)] พิกัดจริง
+Result.EMPTY = Result([], [], False, 0.0)
+
+
+class Analyzer:
+    """เธรดวิเคราะห์ — หยิบเฟรมล่าสุดจากกล้อง รันโมเดล เก็บผลไว้ให้จอไปวาด
+    ไม่รอจอ ไม่บล็อกจอ → จอลื่นเท่า FPS กล้อง"""
+
+    def __init__(self, cam, model, hands, cfg):
+        self.cam, self.model, self.hands, self.cfg = cam, model, hands, cfg
+        self.hold = HoldState(cfg["hold_frames"], cfg["release_frames"])
+        self.cups = CupMemory(cfg.get("cup_memory_frames", 15))
+        self.lock = threading.Lock()
+        self.result = Result.EMPTY
+        self._stop = False
+        self._thread = threading.Thread(target=self._loop, daemon=True)
+        self._thread.start()
+
+    def _loop(self):
+        c = self.cfg
+        while not self._stop:
+            ok, frame = self.cam.read()
+            if not ok or frame is None:
+                time.sleep(0.03)
+                continue
+            t = time.time()
+            h, w = frame.shape[:2]
+
+            r = self.model.track(frame, persist=True, tracker="bytetrack.yaml",
+                                 imgsz=c.get("imgsz", 480), conf=c["conf"],
+                                 classes=[c["cup_class"]], verbose=False)[0]
+            dets = []
+            if r.boxes is not None and r.boxes.id is not None:
+                for box, tid in zip(r.boxes.xyxy.tolist(), r.boxes.id.tolist()):
+                    dets.append((int(tid), box))
+            self.cups.update(dets)
+            cup_boxes = [box for _, box, _ in self.cups.boxes()]
+
+            res = self.hands.detect_for_video(
+                mp.Image(image_format=mp.ImageFormat.SRGB,
+                         data=cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)),
+                int(time.monotonic() * 1000))
+            hands_out, observed = [], False
+            for lm in (res.hand_landmarks or []):
+                on_cup = hand_on_cup(lm, w, h, cup_boxes,
+                                     c.get("grip_open_max", 3), c.get("grip_min_points", 5))
+                observed = observed or on_cup
+                hands_out.append(([(int(p.x * w), int(p.y * h)) for p in lm], on_cup))
+
+            holding = self.hold.update(observed)
+            with self.lock:
+                self.result = Result(self.cups.boxes(), hands_out, holding,
+                                     (time.time() - t) * 1000)
+
+    def latest(self):
+        with self.lock:
+            return self.result
+
+    def release(self):
+        self._stop = True
+        self._thread.join(timeout=2)
+        self.hands.close()          # กัน mediapipe บ่นตอนปิดโปรแกรม
 
 
 # ─────────────────────────── setup ───────────────────────────
@@ -194,21 +263,28 @@ def load_hand_landmarker():
 
 
 # ─────────────────────────── วาด ───────────────────────────
-def draw_hand(img, lm, w, h, color):
-    pts = [(int(p.x * w), int(p.y * h)) for p in lm]
-    for a, b in HAND_EDGES:
-        cv2.line(img, pts[a], pts[b], color, 2)
-    for x, y in pts:
-        cv2.circle(img, (x, y), 3, color, -1)
+def draw(frame, result, disp_fps, debug):
+    h = frame.shape[0]
+    for tid, box, coasting in result.cups:
+        x1, y1, x2, y2 = map(int, box)
+        col = (140, 140, 90) if coasting else (255, 180, 0)
+        cv2.rectangle(frame, (x1, y1), (x2, y2), col, 2)
+        cv2.putText(frame, f"cup #{tid}" + (" (memory)" if coasting else ""),
+                    (x1, y1 - 8), cv2.FONT_HERSHEY_SIMPLEX, 0.6, col, 2)
+    for pts, on_cup in result.hands:
+        col = (0, 255, 0) if on_cup else (200, 200, 200)
+        for a, b in HAND_EDGES:
+            cv2.line(frame, pts[a], pts[b], col, 2)
+        for x, y in pts:
+            cv2.circle(frame, (x, y), 3, col, -1)
 
-
-def draw_hud(img, holding, fps, ms):
-    h = img.shape[0]
-    text = "HOLDING" if holding else "NOT HOLDING"
-    color = (0, 200, 0) if holding else (0, 0, 255)
-    cv2.putText(img, text, (20, 60), cv2.FONT_HERSHEY_SIMPLEX, 1.6, color, 4)
-    cv2.putText(img, f"{fps:4.1f} FPS   {ms:5.1f} ms/frame", (20, h - 20),
-                cv2.FONT_HERSHEY_SIMPLEX, 0.7, (255, 255, 255), 2)
+    text = "HOLDING" if result.holding else "NOT HOLDING"
+    cv2.putText(frame, text, (20, 55), cv2.FONT_HERSHEY_SIMPLEX, 1.5,
+                (0, 200, 0) if result.holding else (0, 0, 255), 4)
+    hud = f"{disp_fps:4.1f} FPS"
+    if debug:
+        hud += f"   infer {result.infer_ms:5.0f} ms"
+    cv2.putText(frame, hud, (20, h - 18), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (255, 255, 255), 2)
 
 
 def draw_waiting(msg):
@@ -225,9 +301,8 @@ def main():
     cfg = load_config()
     model = load_model(cfg["model_path"])
     hands = load_hand_landmarker()
-    cam = Camera(cfg["camera_index"])
+    cam = Camera(cfg["camera_index"], mirror=cfg.get("mirror", True))
 
-    # รอกล้องพร้อมครั้งแรก — ถ้าเกิน 10 วิยังไม่มา แปลว่าเปิดไม่ได้จริง
     t0 = time.time()
     while not cam.read()[0]:
         cv2.imshow(WINDOW, draw_waiting("opening camera..."))
@@ -241,12 +316,10 @@ def main():
                 "camera_index ใน config.yaml เป็น 1 หรือ 2\n"
             )
 
-    hold = HoldState(cfg["hold_frames"], cfg["release_frames"])
-    cups = CupMemory(cfg.get("cup_memory_frames", 15))
+    analyzer = Analyzer(cam, model, hands, cfg)
     debug = False
     prev = time.time()
-    fps = 0.0
-    frame_i = 0
+    disp_fps = 0.0
 
     while True:
         ok, frame = cam.read()
@@ -256,55 +329,11 @@ def main():
                 break
             continue
 
-        if cfg.get("mirror", True):          # selfie view — ขยับขวาไปขวา
-            frame = cv2.flip(frame, 1)
-
-        t = time.time()
-        h, w = frame.shape[:2]
-        frame_i += 1
-
-        # แก้ว: track ให้แต่ละใบมี ID ติดตัว → CupMemory จำกล่องต่อแม้ detection หายตอนมือบัง
-        r = model.track(frame, persist=True, tracker="bytetrack.yaml",
-                        conf=cfg["conf"], classes=[cfg["cup_class"]], verbose=False)[0]
-        detections = []
-        if r.boxes is not None and r.boxes.id is not None:
-            for box, tid in zip(r.boxes.xyxy.tolist(), r.boxes.id.tolist()):
-                detections.append((int(tid), box))
-        cups.update(detections)
-
-        cup_boxes = []
-        for tid, box, coasting in cups.boxes():
-            cup_boxes.append(box)
-            x1, y1, x2, y2 = map(int, box)
-            col = (140, 140, 90) if coasting else (255, 180, 0)   # จาง = จากความจำ
-            cv2.rectangle(frame, (x1, y1), (x2, y2), col, 2)
-            tag = f"cup #{tid}" + (" (memory)" if coasting else "")
-            cv2.putText(frame, tag, (x1, y1 - 8), cv2.FONT_HERSHEY_SIMPLEX, 0.6, col, 2)
-
-        # มือ: MediaPipe โหมด VIDEO ต้องการ timestamp ที่เพิ่มขึ้นเรื่อย ๆ
-        rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
-        res = hands.detect_for_video(mp.Image(image_format=mp.ImageFormat.SRGB, data=rgb),
-                                     int(time.monotonic() * 1000))
-
-        observed = False
-        for lm in (res.hand_landmarks or []):
-            n_ext = count_extended(lm)
-            gripping = n_ext <= cfg["fist_threshold"]   # กำแก้วไม่ใช่กำแน่น เกณฑ์เลยหลวม
-            hb = hand_bbox(lm, w, h)
-            if gripping and any(boxes_overlap(hb, c) for c in cup_boxes):
-                observed = True
-            draw_hand(frame, lm, w, h, (0, 255, 0) if gripping else (200, 200, 200))
-            if debug:
-                cv2.putText(frame, f"ext:{n_ext}", (int(hb[0]), int(hb[1]) - 6),
-                            cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 255, 0), 2)
-
-        holding = hold.update(observed)
-
         now = time.time()
-        fps = 0.9 * fps + 0.1 / max(now - prev, 1e-3)
+        disp_fps = 0.9 * disp_fps + 0.1 / max(now - prev, 1e-3)
         prev = now
-        draw_hud(frame, holding, fps, (now - t) * 1000)
 
+        draw(frame, analyzer.latest(), disp_fps, debug)
         cv2.imshow(WINDOW, frame)
         k = cv2.waitKey(1) & 0xFF
         if k == ord("q"):
@@ -316,6 +345,7 @@ def main():
         elif k == ord("d"):
             debug = not debug
 
+    analyzer.release()
     cam.release()
     cv2.destroyAllWindows()
 
