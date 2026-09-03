@@ -36,7 +36,7 @@ UI = หน้าต่าง `cv2.imshow` เดียว ไม่ใช้ Qt
 
 ## config.yaml
 ```yaml
-model_path: models/best.pt   # หรือ models/best_openvino_model ถ้า optimize.py บอกว่าเร็วกว่า
+model_path: models/best.pt   # GPU → torch ใช้ CUDA เอง · CPU ล้วน → best.onnx (export ให้อัตโนมัติ)
 cup_class: 0                  # 41 ถ้า fallback ไป yolo11m.pt (COCO)
 camera_index: 0
 mirror: true                 # selfie view
@@ -58,7 +58,9 @@ release_frames: 6            # หายติดกันกี่เฟรม�
 `main` (วนวาดผลล่าสุดทับเฟรมสด แล้ว imshow)
 - จอวิ่งเท่า FPS กล้อง (~30) · กล่อง/ป้ายอัปเดตช้ากว่า (เท่าที่ inference ทัน) แต่ภาพไม่กระตุก
 - แก้อาการ "ขยับแก้วแล้ว detect ไม่ตาม" ได้บางส่วน (Analyzer หยิบเฟรมล่าสุดเสมอ ไม่สะสมคิว)
-- ลด `imgsz` (640→480→384) และ `tools/optimize.py` (ONNX/OpenVINO) ช่วยเพิ่มอัตรา inference
+- ให้เร็วสุด: มี NVIDIA GPU → ลง torch cu124 (ultralytics ใช้ `.pt` บน CUDA เอง ~5ms/frame)
+  · CPU ล้วน → `model_path: models/best.onnx` (`load_model` export จาก best.pt ให้ ต้องมี `onnxruntime`)
+  · ลด `imgsz` (480→384) ช่วยทั้งสองทาง
 
 ### 2. Tracking ID + ความจำของแก้ว (`CupMemory`)
 ```python

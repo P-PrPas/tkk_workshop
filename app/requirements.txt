@@ -4,3 +4,5 @@ lap==0.5.*          # bytetrack tracker ต้องใช้ (ไม่งั�
 mediapipe==1.0.1
 opencv-python==4.10.*
 pyyaml==6.*
+# มี NVIDIA GPU: pip install torch --index-url https://download.pytorch.org/whl/cu124
+# CPU ล้วน อยากเร็วขึ้น: pip install onnxruntime แล้วตั้ง model_path: models/best.onnx

@@ -1,6 +1,8 @@
 # ค่าที่ต้องจูนหน้างาน — แสงในห้องจริงไม่เคยเหมือนตอนทดสอบ
-model_path: models/best.pt   # แผนสำรอง: yolo11m.pt (โหลดเอง) + cup_class: 41
-cup_class: 0                  # 0 = best.pt (1 คลาส) · 41 = yolo11m.pt (COCO)
+model_path: models/best.pt   # มี NVIDIA GPU → torch ใช้ CUDA เอง (เร็ว+ทน)
+                             # CPU ล้วน → models/best.onnx (export ให้อัตโนมัติ, ต้องมี onnxruntime)
+                             # แผนสำรอง: yolo11m.pt + cup_class 41
+cup_class: 0                  # 0 = best (1 คลาส) · 41 = yolo11m.pt (COCO)
 camera_index: 0               # ไม่ติด ลอง 1 หรือ 2
 mirror: true                  # กลับซ้าย-ขวาแบบกระจก (selfie view)
 
