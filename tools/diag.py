@@ -38,6 +38,7 @@ while True:
     ok, frame = cap.read()
     if not ok:
         print("อ่านกล้องไม่ได้"); break
+    frame = cv2.flip(frame, 1)              # mirror ให้ตรงกับ app
     h, w = frame.shape[:2]
 
     r = model(frame, conf=CONF, classes=CUP_CLS, verbose=False)[0]
