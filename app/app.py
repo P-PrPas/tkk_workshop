@@ -50,6 +50,12 @@ def count_extended(lm):
     return sum(d(lm[t]) > d(lm[p]) for t, p in zip(TIPS, PIPS))
 
 
+def hand_state(lm):
+    """กำ / แบ / กลาง — เหมือนพาร์ท 2 ของโน้ตบุ๊ก (โชว์ให้ดู ไม่ได้ใช้ตัดสิน HOLDING)"""
+    n = count_extended(lm)
+    return "FIST" if n <= 1 else "OPEN" if n >= 4 else "MID"
+
+
 def hand_on_cup(lm, w, h, cup_boxes, min_pts, max_ratio=3.0):
     """มือ "จับ" แก้วไหม — ไม่ดูว่ากำหรือแบ (แก้วไม่มีหูต้องจับตรง ๆ มือดูเหมือนแบ)
     ดูจาก: มือกับแก้วขนาดใกล้เคียงกัน (ไม่ใช่มือชี้จากไกล) และจุด landmark >= min_pts
@@ -204,8 +210,10 @@ class Analyzer:
                                          c.get("grip_min_points", 10),
                                          c.get("grip_max_size_ratio", 3.0))
                     observed = observed or on_cup
+                    pts_in = max((sum(x1 <= p.x * w <= x2 and y1 <= p.y * h <= y2 for p in lm)
+                                  for x1, y1, x2, y2 in cup_boxes), default=0)
                     hands_out.append(([(int(p.x * w), int(p.y * h)) for p in lm],
-                                      on_cup, count_extended(lm)))
+                                      on_cup, hand_state(lm), pts_in))
                 holding = self.hold.update(observed)
 
                 now = time.time()
@@ -301,6 +309,9 @@ def load_hand_landmarker():
 
 
 # ─────────────────────────── วาด ───────────────────────────
+STATE_COLOR = {"FIST": (0, 220, 0), "OPEN": (200, 200, 200), "MID": (0, 210, 255)}
+
+
 def draw(frame, cups, hands, holding, fps, debug):
     h = frame.shape[0]
     for tid, box, coasting in cups:
@@ -309,15 +320,17 @@ def draw(frame, cups, hands, holding, fps, debug):
         cv2.rectangle(frame, (x1, y1), (x2, y2), col, 2)
         cv2.putText(frame, f"cup #{tid}" + (" (memory)" if coasting else ""),
                     (x1, y1 - 8), cv2.FONT_HERSHEY_SIMPLEX, 0.6, col, 2)
-    for pts, on_cup, n_ext in hands:
-        col = (0, 255, 0) if on_cup else (200, 200, 200)
+    for pts, on_cup, state, pts_in in hands:
+        col = STATE_COLOR[state]                 # สีโครงมือ = ท่ามือ (พาร์ท 2)
         for a, b in HAND_EDGES:
             cv2.line(frame, pts[a], pts[b], col, 2)
         for x, y in pts:
             cv2.circle(frame, (x, y), 3, col, -1)
+        tag = state + (" -> holding cup" if on_cup else "")
         if debug:
-            cv2.putText(frame, f"ext:{n_ext}", (pts[0][0], pts[0][1] + 20),
-                        cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 255, 255), 2)
+            tag += f"  (pts:{pts_in})"
+        cv2.putText(frame, tag, (pts[0][0] - 10, pts[0][1] + 22),
+                    cv2.FONT_HERSHEY_SIMPLEX, 0.6, col, 2)
 
     cv2.putText(frame, "HOLDING" if holding else "NOT HOLDING", (20, 55),
                 cv2.FONT_HERSHEY_SIMPLEX, 1.5, (0, 200, 0) if holding else (0, 0, 255), 4)
