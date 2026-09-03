@@ -21,6 +21,7 @@ from pathlib import Path
 import cv2
 import mediapipe as mp
 import numpy as np
+import torch
 import yaml
 from mediapipe.tasks import python as mp_python
 from mediapipe.tasks.python import vision as mp_vision
@@ -56,18 +57,21 @@ def hand_state(lm):
     return "FIST" if n <= 1 else "OPEN" if n >= 4 else "MID"
 
 
-def hand_on_cup(lm, w, h, cup_boxes, min_pts, max_ratio=3.0):
+def hand_on_cup(lm, w, h, cup_boxes, min_pts, max_ratio=3.0, margin=0.0):
     """มือ "จับ" แก้วไหม — ไม่ดูว่ากำหรือแบ (แก้วไม่มีหูต้องจับตรง ๆ มือดูเหมือนแบ)
     ดูจาก: มือกับแก้วขนาดใกล้เคียงกัน (ไม่ใช่มือชี้จากไกล) และจุด landmark >= min_pts
-    จุดตกอยู่ในกล่องแก้ว (มือ *ห่อ* แก้ว จุดส่วนใหญ่เลยทับกล่อง)"""
+    จุดตกอยู่ในกล่องแก้ว (ขยายขอบ margin เท่าตัวแก้ว — แก้วมีหูจับที่หู มือจะอยู่ *ข้าง* กล่อง)"""
     hx = [p.x * w for p in lm]
     hy = [p.y * h for p in lm]
     ha = (max(hx) - min(hx)) * (max(hy) - min(hy))
     for x1, y1, x2, y2 in cup_boxes:
-        ca = (x2 - x1) * (y2 - y1)
+        cw, ch = x2 - x1, y2 - y1
+        ca = cw * ch
         if ca <= 0 or not (1 / max_ratio <= ha / ca <= max_ratio):
             continue                        # มือใหญ่/เล็กกว่าแก้วมาก = คนละระยะ ไม่ได้จับ
-        if sum(x1 <= x <= x2 and y1 <= y <= y2 for x, y in zip(hx, hy)) >= min_pts:
+        mx, my = margin * cw, margin * ch
+        if sum(x1 - mx <= x <= x2 + mx and y1 - my <= y <= y2 + my
+               for x, y in zip(hx, hy)) >= min_pts:
             return True
     return False
 
@@ -204,13 +208,16 @@ class Analyzer:
                     mp.Image(image_format=mp.ImageFormat.SRGB,
                              data=cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)),
                     int(time.monotonic() * 1000))
+                mgn = c.get("grip_box_margin", 0.35)
                 hands_out, observed = [], False
                 for lm in (res.hand_landmarks or []):
                     on_cup = hand_on_cup(lm, w, h, cup_boxes,
                                          c.get("grip_min_points", 10),
-                                         c.get("grip_max_size_ratio", 3.0))
+                                         c.get("grip_max_size_ratio", 4.0), mgn)
                     observed = observed or on_cup
-                    pts_in = max((sum(x1 <= p.x * w <= x2 and y1 <= p.y * h <= y2 for p in lm)
+                    pts_in = max((sum(x1 - mgn * (x2 - x1) <= p.x * w <= x2 + mgn * (x2 - x1)
+                                      and y1 - mgn * (y2 - y1) <= p.y * h <= y2 + mgn * (y2 - y1)
+                                      for p in lm)
                                   for x1, y1, x2, y2 in cup_boxes), default=0)
                     hands_out.append(([(int(p.x * w), int(p.y * h)) for p in lm],
                                       on_cup, hand_state(lm), pts_in))
@@ -284,6 +291,15 @@ def load_model(cfg):
             "โหลดเอง:  gh release download v1 -R P-PrPas/tkk_workshop -p best.pt -D app/models\n"
             "หรือใช้แผนสำรอง: model_path: yolo11m.pt  +  cup_class: 41  ใน config.yaml\n"
         )
+    if p.suffix == ".pt" and not torch.cuda.is_available():
+        print("──────────────────────────────────────────────────────────────")
+        print("  YOLO จะรันบน CPU → ~5 FPS. ถ้าเครื่องนี้มี NVIDIA GPU ให้ลง torch CUDA:")
+        print("    pip install --force-reinstall torch torchvision \\")
+        print("        --index-url https://download.pytorch.org/whl/cu124")
+        print("──────────────────────────────────────────────────────────────")
+    else:
+        print("YOLO device:", "CUDA " + torch.cuda.get_device_name(0)
+              if torch.cuda.is_available() else "CPU (onnx)")
     return YOLO(str(p))
 
 
