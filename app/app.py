@@ -443,17 +443,18 @@ def draw(frame, cups, hands, holding, held_s, held_id, fps, device, debug, toast
     T = []
 
     # ── กล่องแก้ว: มุมเหลี่ยม (look แบบ detection) + ป้ายชื่อ ──
-    for tid, box, coasting in cups:
+    # กล่อง coasting (จาก CupMemory) ไม่วาด — กติกายังใช้เช็กอยู่เบื้องหลัง แค่ไม่โชว์บนจอ
+    cups = [c for c in cups if not c[2]]
+    for tid, box, _coasting in cups:
         x1, y1, x2, y2 = map(int, box)
         active = holding and tid == held_id
-        col = OK if active else WARN if coasting else CUP
+        col = OK if active else CUP
         L, t = px(26), px(2)
         for cx, sx in ((x1, 1), (x2, -1)):
             for cy, sy in ((y1, 1), (y2, -1)):
                 cv2.line(frame, (cx, cy), (cx + sx * L, cy), col, t, cv2.LINE_AA)
                 cv2.line(frame, (cx, cy), (cx, cy + sy * L), col, t, cv2.LINE_AA)
-        tag = f"cup #{tid}" + ("  memory" if coasting else "  held" if active else "")
-        _chip(frame, T, x1, y1 - px(32), tag, col, u)
+        _chip(frame, T, x1, y1 - px(32), f"cup #{tid}" + ("  held" if active else ""), col, u)
 
     # ── โครงมือ: สีตามท่า (พาร์ท 2) · เขียวเมื่อจับแก้ว ──
     for pts, on_cup, state, pts_in in hands:
