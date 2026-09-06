@@ -2,9 +2,10 @@
 
 รัน:  python app/test_app.py
 """
+import time
 from types import SimpleNamespace
 
-from app import CupMemory, HoldState, hand_on_cup, hand_state
+from app import CupMemory, HoldState, Inspection, hand_on_cup, hand_state
 
 
 def _hand(pts):
@@ -73,9 +74,50 @@ def test_hand_on_cup_eared():
     assert hand_on_cup(beside, W, H, cup, min_pts=12, max_ratio=4.0, margin=0.5)
 
 
+def test_inspection():
+    """เช็กลิสต์: เฉียดผ่านไม่ติ๊ก · ถือครบ need เฟรมถึงติ๊ก · ติ๊กแล้วปล่อยก็ยังติ๊ก · reset ล้างหมด"""
+    ins = Inspection(need=4, trail_len=5, forget_seconds=999)
+    cup1, cup2 = (0, [0, 0, 10, 10]), (2, [50, 50, 60, 60])
+
+    for _ in range(3):                                  # มือเฉียด cup 0 อยู่ 3 เฟรม (ไม่ถึง 4)
+        ins.update([cup1, cup2], {0})
+    assert ins.rows() == [(0, False), (2, False)], "เฉียดผ่านไม่ควรติ๊ก"
+
+    for _ in range(4):
+        ins.update([cup1, cup2], {2})                   # จับ cup 2 ครบ 4 เฟรม
+    assert ins.rows() == [(0, False), (2, True)]
+    for _ in range(10):
+        ins.update([cup1, cup2], set())                 # ปล่อยแล้ว ยังต้องติ๊กค้าง
+    assert ins.rows() == [(0, False), (2, True)]
+
+    assert len(ins.trails[2]) == 5, "เส้นทางต้องเก็บแค่ trail_len จุดล่าสุด"
+    ins.reset()
+    assert ins.rows() == []
+
+
+def test_inspection_survives_flicker():
+    """หลุดสลับเฟรมเว้นเฟรม ตัวนับถอยแค่ทีละหนึ่ง — สะสมจนติ๊กได้ ไม่ล้างทิ้งทุกครั้งที่วืบ"""
+    ins = Inspection(need=3, trail_len=5, forget_seconds=999)
+    for hit in (True, False, True, False, True, True, True):
+        ins.update([(7, [0, 0, 10, 10])], {7} if hit else set())
+    assert ins.rows() == [(7, True)]
+
+
+def test_inspection_forgets_untouched():
+    """แก้วที่ไม่เคยถูกตรวจและหายไปนาน = หลุดจากเช็กลิสต์ · ที่ตรวจแล้วอยู่ยาว"""
+    ins = Inspection(need=1, trail_len=5, forget_seconds=0.05)
+    ins.update([(1, [0, 0, 10, 10]), (2, [9, 9, 20, 20])], {2})
+    time.sleep(0.06)
+    ins.update([], set())
+    assert ins.rows() == [(2, True)]
+
+
 if __name__ == "__main__":
     test_hysteresis()
     test_cup_memory()
+    test_inspection()
+    test_inspection_survives_flicker()
+    test_inspection_forgets_untouched()
     test_hand_state()
     test_hand_on_cup()
     test_hand_on_cup_eared()

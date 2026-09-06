@@ -1,15 +1,18 @@
-"""คนถือแก้ว — เวอร์ชัน "ใช้งานได้จริง" ที่วิทยากรรันโชว์หน้าห้อง
+"""เช็กลิสต์ผู้ตรวจ — เวอร์ชัน "ใช้งานได้จริง" ที่วิทยากรรันโชว์หน้าห้อง
 
+โจทย์: operator หยิบชิ้นงานไหนออกมาตรวจแล้วบ้าง
 กฎยังเหมือนโน้ตบุ๊ก: มือ (ไม่แบกว้าง) อยู่บนแก้ว → กำลังถือ
 ที่เพิ่มคือวิศวกรรมรอบ ๆ กฎ:
   1. threaded capture — อ่านกล้องอีกเธรด เก็บเฟรมล่าสุด ไม่มีดีเลย์สะสม
   2. threaded inference — YOLO + MediaPipe อยู่อีกเธรด วาดผลลงเฟรมที่มันวิเคราะห์
-     main แค่แสดง → จอเดินเท่า detect FPS · กล่องอยู่บนเฟรมที่ถูกต้องเสมอ ไม่ลอยตามหลัง
+     GUI แค่แสดง → ภาพเดินเท่า detect FPS · กล่องอยู่บนเฟรมที่ถูกต้องเสมอ ไม่ลอยตามหลัง
   3. tracking ID + CupMemory — แก้วที่โดนมือกำบังจนตรวจไม่เจอ ยังจำกล่องไว้ต่อ
   4. HoldState hysteresis — ป้ายไม่กระพริบ (ขึ้นยาก ลงยากกว่า)
-  5. จัดการ error จริง — กล้องหลุดต่อใหม่, โมเดล/กล้องหาย ขึ้นข้อความไทย
+  5. Inspection — เช็กลิสต์ว่าชิ้นไหนถูกหยิบไปตรวจแล้ว + เส้นทางที่มันเคลื่อนที่มา
+     ต้องถูกจับติดกันหลายเฟรมจึงติ๊ก มือเฉียดผ่านไม่นับ · กด R เริ่มรอบใหม่
+  6. จัดการ error จริง — กล้องหลุดต่อใหม่, โมเดล/กล้องหาย ขึ้นข้อความไทย
 
-หน้าต่างเดียว (`cv2`) — ลากขอบปรับขนาดได้ · กด F เต็มจอ · HUD วาดลงบนเฟรม
+GUI = Tkinter (มากับ Python ไม่ต้องลงเพิ่ม): ภาพซ้าย · เช็กลิสต์+ปุ่มขวา · แถบสถานะล่าง
 รัน:  python app/app.py
 ค่าที่ต้องจูนหน้างานอยู่ใน app/config.yaml ทั้งหมด — ห้ามแก้ไฟล์นี้หน้างาน
 """
@@ -18,6 +21,7 @@ import threading
 import time
 import urllib.error
 import urllib.request
+from collections import deque
 from pathlib import Path
 
 import cv2
@@ -25,10 +29,15 @@ import mediapipe as mp
 import numpy as np
 import torch
 import yaml
-from PIL import Image, ImageDraw, ImageFont
+from PIL import Image, ImageDraw, ImageFont, ImageTk
 from mediapipe.tasks import python as mp_python
 from mediapipe.tasks.python import vision as mp_vision
 from ultralytics import YOLO
+
+try:
+    import tkinter as tk
+except ImportError:                 # ลินุกซ์บางดิสโทรแยก tk ออกจาก python
+    raise SystemExit("\nไม่มี tkinter — ติดตั้งก่อน:  sudo apt install python3-tk\n")
 
 HERE = Path(__file__).parent
 HAND_TASK = HERE / "hand_landmarker.task"
@@ -126,6 +135,47 @@ class CupMemory:
         return [(tid, box, miss > 0) for tid, (box, miss) in self.tracks.items()]
 
 
+class Inspection:
+    """เช็กลิสต์รอบตรวจ — ชิ้นไหนถูกหยิบออกมาตรวจแล้ว + เส้นทางที่มันเคลื่อนที่มา
+
+    ต้องถูกจับสะสมครบ `need` เฟรมจึงติ๊กถูก (มือเฉียดผ่านไม่นับ) หลุดไปเฟรมเดียว
+    ถอยแค่หนึ่ง ไม่ล้างทิ้ง — ตัวนับแบบรั่ว ทนเฟรมที่ pose วืบหายเหมือน HoldState
+    ติ๊กแล้วติ๊กเลย วางคืนก็ยังตรวจแล้ว จนกว่าจะกด reset เริ่มรอบใหม่"""
+
+    def __init__(self, need, trail_len, forget_seconds):
+        self.need, self.trail_len, self.forget = need, trail_len, forget_seconds
+        self.reset()
+
+    def reset(self):
+        self.trails = {}      # tid -> deque จุดกึ่งกลางกล่อง
+        self.hits = {}        # tid -> เฟรมสะสมที่มือจับอยู่
+        self.picked = {}      # tid -> เวลาที่นับว่าตรวจแล้ว
+        self.seen = {}        # tid -> เวลาที่เห็นล่าสุด
+        self.started = time.time()
+
+    def update(self, id_boxes, held_ids):
+        now = time.time()
+        for tid, (x1, y1, x2, y2) in id_boxes:
+            self.seen[tid] = now
+            self.trails.setdefault(tid, deque(maxlen=self.trail_len)).append(
+                (int((x1 + x2) / 2), int((y1 + y2) / 2)))
+        for tid in set(self.hits) | set(held_ids):
+            self.hits[tid] = max(0, min(self.need, self.hits.get(tid, 0)
+                                        + (1 if tid in held_ids else -1)))
+            if self.hits[tid] >= self.need:
+                self.picked.setdefault(tid, now)
+        # ลืม id ที่หายไปนานและไม่เคยถูกหยิบ — tracker แจก id ใหม่เรื่อย ๆ เช็กลิสต์จะรก
+        for tid, last in list(self.seen.items()):
+            if now - last > self.forget and tid not in self.picked:
+                del self.seen[tid]
+                self.trails.pop(tid, None)
+                self.hits.pop(tid, None)
+
+    def rows(self):
+        """[(tid, ตรวจแล้ว?)] เรียงตามเลข — ให้ GUI เอาไปวาดเช็กลิสต์"""
+        return sorted((tid, tid in self.picked) for tid in set(self.seen) | set(self.picked))
+
+
 # ─────────── threaded capture — เก็บแค่เฟรมล่าสุด กันดีเลย์สะสม ───────────
 class Camera:
     """อ่านกล้องในเธรดแยกแบบไม่หยุด เก็บเฉพาะเฟรมล่าสุด (mirror ให้ด้วยถ้า mirror=True)
@@ -184,24 +234,45 @@ class Analyzer:
         self.device_label = self.device.upper() + (" · onnx" if str(cfg["model_path"]).endswith(".onnx") else "")
         self.hold = HoldState(cfg["hold_frames"], cfg["release_frames"])
         self.cups = CupMemory(cfg.get("cup_memory_frames", 15))
+        self.insp = Inspection(cfg.get("pick_frames", 8), cfg.get("trail_length", 60),
+                               cfg.get("forget_seconds", 4.0))
         self.lock = threading.Lock()
         self.frame = None            # เฟรมที่วาดผลแล้ว พร้อมแสดง
-        self.fps = 0.0
+        self.seq = 0                 # เลขเฟรม — GUI ใช้เช็กว่ามีของใหม่ค่อยแปลงภาพ
+        self.status = {"holding": False, "held_s": 0.0, "fps": 0.0, "hands": 0,
+                       "rows": [], "device": self.device_label}
         self.debug = False
-        self.toast = None            # (ข้อความ, เวลาหมดอายุ) — ป็อปอัปสั้น ๆ เวลากดปุ่ม
+        self._reset = False          # ตั้งจาก GUI — เคลียร์ในเธรดนี้ ไม่ไปยุ่งกับ tracker ข้ามเธรด
         self._stop = False
         self._thread = threading.Thread(target=self._loop, daemon=True)
         self._thread.start()
+
+    def reset(self):
+        """เริ่มรอบตรวจใหม่ — ขอไว้ก่อน เธรดวิเคราะห์จะทำให้ตอนต้นเฟรมถัดไป"""
+        self._reset = True
+
+    def _do_reset(self):
+        self.insp.reset()
+        self.cups = CupMemory(self.cfg.get("cup_memory_frames", 15))
+        self.hold = HoldState(self.cfg["hold_frames"], self.cfg["release_frames"])
+        try:                        # ให้ ByteTrack เริ่มนับ id ใหม่จาก 1 ด้วย
+            for t in self.model.predictor.trackers:
+                t.reset()
+        except Exception:
+            pass                    # ยังไม่เคย track สักเฟรม / ultralytics เปลี่ยน API — ไม่ใช่เรื่องคอขาดบาดตาย
 
     def _loop(self):
         c = self.cfg
         prev = time.time()
         while not self._stop:
             try:
+                if self._reset:
+                    self._reset = False
+                    self._do_reset()
                 ok, frame = self.cam.read()
                 if not ok or frame is None:
                     with self.lock:
-                        self.frame = splash("reconnecting camera")
+                        self.frame, self.seq = splash("reconnecting camera"), self.seq + 1
                     time.sleep(0.1)
                     continue
                 h, w = frame.shape[:2]
@@ -223,34 +294,40 @@ class Analyzer:
                              data=cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)),
                     int(time.monotonic() * 1000))
                 mgn = c.get("grip_box_margin", 0.35)
-                hands_out, observed, held_id = [], False, None
+                hands_out, held_ids = [], set()
                 for lm in (res.hand_landmarks or []):
                     on_cup = hand_on_cup(lm, w, h, cup_boxes,
                                          c.get("grip_min_points", 10),
                                          c.get("grip_max_size_ratio", 4.0), mgn)
-                    observed = observed or on_cup
                     pts_in = max((sum(x1 - mgn * (x2 - x1) <= p.x * w <= x2 + mgn * (x2 - x1)
                                       and y1 - mgn * (y2 - y1) <= p.y * h <= y2 + mgn * (y2 - y1)
                                       for p in lm)
                                   for x1, y1, x2, y2 in cup_boxes), default=0)
-                    if on_cup:               # แก้วใบที่มือทับจุดมากสุด = ใบที่กำลังถือ
-                        held_id = max(((sum(x1 <= p.x * w <= x2 and y1 <= p.y * h <= y2
-                                            for p in lm), tid)
-                                       for tid, (x1, y1, x2, y2) in id_boxes),
-                                      default=(0, None))[1]
+                    if on_cup:               # แก้วใบที่มือทับจุดมากสุด = ใบที่มือนี้ถืออยู่
+                        best = max(((sum(x1 <= p.x * w <= x2 and y1 <= p.y * h <= y2
+                                         for p in lm), tid)
+                                    for tid, (x1, y1, x2, y2) in id_boxes), default=(0, None))
+                        if best[1] is not None:
+                            held_ids.add(best[1])
                     hands_out.append(([(int(p.x * w), int(p.y * h)) for p in lm],
                                       on_cup, hand_state(lm), pts_in))
-                holding = self.hold.update(observed)
+                holding = self.hold.update(bool(held_ids))
+                self.insp.update(id_boxes, held_ids)
 
                 now = time.time()
-                self.fps = 0.9 * self.fps + 0.1 / max(now - prev, 1e-3)
+                fps = 0.9 * self.status["fps"] + 0.1 / max(now - prev, 1e-3)
                 prev = now
-                held_s = now - self.hold.since if holding else 0.0
-                toast = self.toast[0] if self.toast and now < self.toast[1] else None
-                view = draw(frame, self.cups.boxes(), hands_out, holding, held_s, held_id,
-                            self.fps, self.device_label, self.debug, toast)
+                view = draw(frame, self.cups.boxes(), hands_out, held_ids,
+                            self.insp, self.debug)
                 with self.lock:
-                    self.frame = view
+                    self.frame, self.seq = view, self.seq + 1
+                    self.status = {
+                        "holding": holding,
+                        "held_s": now - self.hold.since if holding else 0.0,
+                        "fps": fps, "hands": len(hands_out),
+                        "rows": self.insp.rows(), "device": self.device_label,
+                        "round_s": now - self.insp.started,
+                    }
             except Exception as e:
                 if self._stop:
                     break               # กำลังปิดโปรแกรม — เงียบไว้
@@ -258,8 +335,10 @@ class Analyzer:
                 time.sleep(0.2)
 
     def latest(self):
+        """(เลขเฟรม, เฟรม, สถานะ) — GUI เทียบเลขเฟรมก่อน ไม่ต้องแปลงภาพเดิมซ้ำ"""
         with self.lock:
-            return None if self.frame is None else self.frame.copy()
+            frame = None if self.frame is None else self.frame.copy()
+            return self.seq, frame, dict(self.status)
 
     def release(self):
         self._stop = True
@@ -373,10 +452,10 @@ def load_hand_landmarker():
 INK   = (22, 24, 28)      # พื้นแผงโปร่งแสง  (BGR)
 FG    = (245, 247, 249)   # อักษรหลัก
 MUTED = (150, 156, 165)   # อักษรรอง
-OK    = (105, 205, 100)   # HOLDING / มือจับแก้ว  (เขียว)
-WARN  = (70, 180, 255)    # แก้วจากความจำ  (เหลืองอำพัน)
-BAD   = (78, 82, 235)     # NOT HOLDING  (แดง)
-CUP   = (225, 195, 95)    # กล่องแก้วสด  (ฟ้า)
+OK    = (105, 205, 100)   # มือจับแก้ว  (เขียว)
+WARN  = (70, 180, 255)    # เหลืองอำพัน
+DONE  = (105, 205, 100)   # แก้วที่ตรวจแล้ว  (เขียว)
+TODO  = (60, 190, 245)    # แก้วที่ยังไม่ตรวจ  (เหลือง)
 STATE_COLOR = {"FIST": OK, "OPEN": (205, 205, 210), "MID": WARN}   # สีโครงมือตามท่า (พาร์ท 2)
 
 try:                        # DejaVu มากับ matplotlib (dep ของ ultralytics อยู่แล้ว)
@@ -425,15 +504,6 @@ def panel(frame, box, alpha=0.5, r=14, color=INK):
     cv2.addWeighted(ov, alpha, roi, 1 - alpha, 0, roi)
 
 
-def scrim(frame, strength=0.55):
-    """ไล่เฉดมืดขอบบน-ล่าง — อ่านตัวหนังสือออกไม่ว่าพื้นหลังจะสว่างแค่ไหน"""
-    h = frame.shape[0]
-    b = max(1, int(h * 0.26))
-    ramp = np.linspace(strength, 0.0, b, dtype=np.float32)[:, None, None]
-    frame[:b] = (frame[:b] * (1 - ramp)).astype(np.uint8)
-    frame[h - b:] = (frame[h - b:] * (1 - ramp[::-1])).astype(np.uint8)
-
-
 def _put(items, x, y, s, ft, col, anchor="la"):
     items.append((int(x), int(y), s, ft, (col[2], col[1], col[0]), anchor))
 
@@ -455,27 +525,31 @@ def _chip(frame, T, x, y, s, col, u):
     _put(T, x + pad, y + pad, s, ft, col)
 
 
-def draw(frame, cups, hands, holding, held_s, held_id, fps, device, debug, toast):
-    """วาด HUD ทั้งหมดลงบนเฟรม แล้วคืนเฟรมที่วาดข้อความเสร็จ · u = สเกลตามความสูงจอ"""
-    h, w = frame.shape[:2]
-    u = h / 720.0
+def draw(frame, cups, hands, held_ids, insp, debug):
+    """วาดลงบนภาพเฉพาะสิ่งที่ต้องอยู่ *ตรงตำแหน่ง* — เส้นทาง กล่องแก้ว โครงมือ
+    สถานะ/FPS/เช็กลิสต์เป็นวิดเจ็ตของ GUI ไม่ต้องเขียนทับภาพ (และพิมพ์ไทยได้)
+    u = สเกลตามความสูงเฟรม ทำให้เส้น/ตัวหนังสือหนาเท่ากันทุกความละเอียด"""
+    u = frame.shape[0] / 720.0
     px = lambda v: max(1, int(v * u))
-    scrim(frame)
     T = []
 
-    # ── กล่องแก้ว: มุมเหลี่ยม (look แบบ detection) + ป้ายชื่อ ──
+    # ── แก้ว: เส้นทางที่เคลื่อนมา + กรอบมุมเหลี่ยม + ป้าย id (ติ๊กถูกถ้าตรวจแล้ว) ──
     # กล่อง coasting (จาก CupMemory) ไม่วาด — กติกายังใช้เช็กอยู่เบื้องหลัง แค่ไม่โชว์บนจอ
-    cups = [c for c in cups if not c[2]]
-    for tid, box, _coasting in cups:
+    for tid, box, coasting in cups:
+        if coasting:
+            continue
+        done = tid in insp.picked
+        col = DONE if done else TODO
+        trail = insp.trails.get(tid)
+        if trail and len(trail) > 1:
+            cv2.polylines(frame, [np.array(trail, np.int32)], False, col, px(2), cv2.LINE_AA)
         x1, y1, x2, y2 = map(int, box)
-        active = holding and tid == held_id
-        col = OK if active else CUP
-        L, t = px(26), px(2)
+        L, t = px(26), px(4 if tid in held_ids else 2)
         for cx, sx in ((x1, 1), (x2, -1)):
             for cy, sy in ((y1, 1), (y2, -1)):
                 cv2.line(frame, (cx, cy), (cx + sx * L, cy), col, t, cv2.LINE_AA)
                 cv2.line(frame, (cx, cy), (cx, cy + sy * L), col, t, cv2.LINE_AA)
-        _chip(frame, T, x1, y1 - px(32), f"cup #{tid}" + ("  held" if active else ""), col, u)
+        _chip(frame, T, x1, y1 - px(32), f"#{tid}" + ("  ✓" if done else ""), col, u)
 
     # ── โครงมือ: สีตามท่า (พาร์ท 2) · เขียวเมื่อจับแก้ว ──
     for pts, on_cup, state, pts_in in hands:
@@ -486,50 +560,6 @@ def draw(frame, cups, hands, holding, held_s, held_id, fps, device, debug, toast
             cv2.circle(frame, (x, y), px(3), col, -1, cv2.LINE_AA)
         msg = state + ("  on cup" if on_cup else "") + (f"   pts:{pts_in}" if debug else "")
         _put(T, pts[0][0], pts[0][1] + px(18), msg, font(15 * u, True), col, "lm")
-
-    # ── แผงสถานะ (บนซ้าย) ──
-    m = px(24)
-    big, small = font(38 * u, True), font(15 * u)
-    word = "HOLDING" if holding else "NOT HOLDING"
-    col = OK if holding else BAD
-    sub = f"held for {held_s:0.1f}s" if holding else "waiting for a hand on a cup"
-    dot, pad = px(9), px(18)
-    inner = dot * 2 + px(12) + max(big.getlength(word), small.getlength(sub))
-    panel(frame, (m, m, m + inner + pad * 2, m + px(76)), 0.5, px(16))
-    dcx, dcy = m + pad + dot, m + px(28)
-    cv2.circle(frame, (dcx, dcy), dot, col, -1, cv2.LINE_AA)
-    if holding:
-        cv2.circle(frame, (dcx, dcy), dot + px(5), col, px(1), cv2.LINE_AA)
-    _put(T, dcx + dot + px(12), dcy, word, big, col, "lm")
-    _put(T, m + pad, m + px(50), sub, small, MUTED)
-
-    # ── แผงสถิติ (บนขวา) — FPS นี้คือ detect FPS จริง ไม่ใช่ FPS วิดีโอ ──
-    rx = w - m
-    _put(T, rx, m + px(4), f"{fps:0.1f}", font(30 * u, True), FG, "ra")
-    _put(T, rx, m + px(30), "DETECT FPS", font(12 * u, True), MUTED, "ra")
-    _put(T, rx, m + px(52), device, font(13 * u, True), MUTED, "ra")
-    _put(T, rx, m + px(70),
-         f"{len(hands)} hand{'s' * (len(hands) != 1)}  ·  {len(cups)} cup{'s' * (len(cups) != 1)}",
-         font(13 * u), MUTED, "ra")
-
-    # ── แถบปุ่ม (ล่างกลาง) ──
-    keys = [("Q", "quit"), ("S", "shot"), ("D", "debug"), ("F", "fullscreen")]
-    kf, lf = font(15 * u, True), font(14 * u)
-    sz = px(28)
-    seg = [sz + px(7) + lf.getlength(lab) + px(18) for _, lab in keys]
-    x, y = (w - (sum(seg) - px(18))) / 2, h - m - sz
-    for (k, lab), segw in zip(keys, seg):
-        panel(frame, (x, y, x + sz, y + sz), 0.55, px(7), (58, 62, 70))
-        _put(T, x + sz / 2, y + sz / 2, k, kf, FG, "mm")
-        _put(T, x + sz + px(7), y + sz / 2, lab, lf, MUTED, "lm")
-        x += segw
-
-    # ── toast (ลอยเหนือแถบปุ่ม ตอนกดปุ่ม) ──
-    if toast:
-        tf = font(15 * u, True)
-        cx, ty, tw = w / 2, h - m - sz - px(46), tf.getlength(toast)
-        panel(frame, (cx - tw / 2 - px(16), ty, cx + tw / 2 + px(16), ty + px(32)), 0.62, px(15))
-        _put(T, cx, ty + px(16), toast, tf, FG, "mm")
 
     return _flush(frame, T)
 
@@ -549,10 +579,187 @@ def splash(msg, width=1280):
     return _flush(img, T)
 
 
+# ─────────────────────────── GUI (tkinter) ───────────────────────────
+# Segoe UI / Helvetica มี glyph ไทย — ดังนั้นข้อความบน GUI เป็นไทยได้ (ต่างจากบนเฟรม)
+UI = {"win32": "Segoe UI", "darwin": "Helvetica"}.get(sys.platform, "Noto Sans Thai")
+BG, CARD, LINE = "#0f1216", "#171b22", "#252b35"
+TXT, DIM = "#eef1f5", "#98a2b0"
+G, Y, R = "#69cd64", "#f5be3c", "#eb524e"
+
+
+def _button(parent, text, cmd, accent=False):
+    return tk.Button(parent, text=text, command=cmd, cursor="hand2",
+                     bg=G if accent else CARD, fg="#0f1216" if accent else TXT,
+                     activebackground=G if accent else LINE,
+                     activeforeground="#0f1216" if accent else TXT,
+                     font=(UI, 11, "bold" if accent else "normal"),
+                     relief="flat", bd=0, padx=10, pady=9, highlightthickness=0)
+
+
+class App:
+    """หน้าต่างเดียว: ภาพซ้าย · เช็กลิสต์ขวา · แถบสถานะล่าง
+    GUI ไม่คิดอะไรเอง แค่หยิบเฟรม+สถานะล่าสุดจาก Analyzer มาแสดงทุก 20ms"""
+
+    def __init__(self, root, analyzer, cfg):
+        self.root, self.an, self.cfg = root, analyzer, cfg
+        self.seq, self.photo, self.shown_rows, self.full = -1, None, None, False
+        self.msg = ("", 0.0)              # ข้อความชั่วคราวบนแถบสถานะ
+        self.t0 = time.time()
+
+        vw = int(cfg.get("window_width", 1280))
+        root.title("เช็กลิสต์ผู้ตรวจ — cup inspection")
+        root.configure(bg=BG)
+        root.geometry(f"{vw + 330}x{vw * 9 // 16 + 60}")
+        root.minsize(900, 520)
+        root.protocol("WM_DELETE_WINDOW", self.quit)
+
+        body = tk.Frame(root, bg=BG)
+        body.pack(fill="both", expand=True)
+        self.video = tk.Label(body, bg="#000000", bd=0)
+        self.video.pack(side="left", fill="both", expand=True)
+        self._sidebar(body)
+        self._statusbar(root)
+
+        for key, fn in (("q", self.quit), ("<Escape>", self.quit), ("r", self.reset),
+                        ("s", self.shot), ("d", self.toggle_debug), ("f", self.fullscreen)):
+            root.bind(key if key.startswith("<") else f"<KeyPress-{key}>", lambda e, f=fn: f())
+        self.tick()
+
+    # ── โครงหน้าตา ──
+    def _sidebar(self, parent):
+        side = tk.Frame(parent, bg=BG, width=310)
+        side.pack(side="right", fill="y")
+        side.pack_propagate(False)
+
+        tk.Label(side, text="รายการตรวจ", bg=BG, fg=TXT, font=(UI, 15, "bold")).pack(
+            anchor="w", padx=18, pady=(16, 0))
+        tk.Label(side, text="ชิ้นงานไหนถูกหยิบออกมาตรวจแล้ว", bg=BG, fg=DIM,
+                 font=(UI, 9)).pack(anchor="w", padx=18)
+
+        card = tk.Frame(side, bg=CARD)
+        card.pack(fill="x", padx=14, pady=12)
+        self.count = tk.Label(card, text="0 / 0", bg=CARD, fg=TXT, font=(UI, 26, "bold"))
+        self.count.pack(anchor="w", padx=14, pady=(12, 0))
+        tk.Label(card, text="ตรวจแล้ว", bg=CARD, fg=DIM, font=(UI, 9)).pack(anchor="w", padx=14)
+        self.bar = tk.Canvas(card, height=6, bg=LINE, highlightthickness=0)
+        self.bar.pack(fill="x", padx=14, pady=(10, 14))
+
+        self.list = tk.Frame(side, bg=BG)     # ponytail: ไม่มี scrollbar — เกิน ~10 ชิ้นค่อยใส่
+        self.list.pack(fill="both", expand=True, padx=14)
+
+        keys = tk.Frame(side, bg=BG)
+        keys.pack(fill="x", padx=14, pady=(0, 12))
+        _button(keys, "เริ่มรอบใหม่   R", self.reset, accent=True).pack(fill="x", pady=(0, 6))
+        row = tk.Frame(keys, bg=BG)
+        row.pack(fill="x")
+        for text, fn in (("บันทึกภาพ  S", self.shot), ("เต็มจอ  F", self.fullscreen),
+                         ("ออก  Q", self.quit)):
+            _button(row, text, fn).pack(side="left", expand=True, fill="x", padx=2)
+
+    def _statusbar(self, parent):
+        bar = tk.Frame(parent, bg=CARD, height=36)
+        bar.pack(fill="x", side="bottom")
+        self.dot = tk.Label(bar, text="●", bg=CARD, fg=DIM, font=(UI, 12))
+        self.dot.pack(side="left", padx=(14, 6), pady=7)
+        self.state = tk.Label(bar, text="กำลังเริ่ม...", bg=CARD, fg=TXT, font=(UI, 11, "bold"))
+        self.state.pack(side="left")
+        self.stats = tk.Label(bar, text="", bg=CARD, fg=DIM, font=(UI, 10))
+        self.stats.pack(side="right", padx=14)
+
+    # ── ปุ่ม ──
+    def reset(self):
+        self.an.reset()
+        self.flash("เริ่มรอบตรวจใหม่แล้ว")
+
+    def shot(self):
+        _, frame, _ = self.an.latest()
+        if frame is not None:
+            fn = f"shot_{int(time.time())}.png"
+            cv2.imwrite(fn, frame)
+            print("เซฟภาพ:", fn)
+            self.flash(f"บันทึก {fn}")
+
+    def toggle_debug(self):
+        self.an.debug = not self.an.debug
+        self.flash(f"debug {'เปิด' if self.an.debug else 'ปิด'}")
+
+    def fullscreen(self):
+        self.full = not self.full
+        self.root.attributes("-fullscreen", self.full)
+
+    def quit(self):
+        self.root.destroy()
+
+    def flash(self, text, seconds=2.0):
+        self.msg = (text, time.time() + seconds)
+
+    # ── วนแสดงผล ──
+    def tick(self):
+        seq, frame, st = self.an.latest()
+        if frame is None:
+            frame = splash("starting model", int(self.cfg.get("window_width", 1280)))
+            seq = -2
+        if seq != self.seq:               # เฟรมเดิมไม่ต้องแปลงซ้ำ (แปลงภาพแพงกว่าที่คิด)
+            self.seq = seq
+            self._show(frame)
+        self._sync(st)
+        self.root.after(20, self.tick)
+
+    def _show(self, frame):
+        lw, lh = self.video.winfo_width(), self.video.winfo_height()
+        if lw < 20 or lh < 20:            # ยังไม่ได้ layout รอบแรก
+            return
+        h, w = frame.shape[:2]
+        s = min(lw / w, lh / h)
+        small = cv2.resize(frame, (max(1, int(w * s)), max(1, int(h * s))),
+                           interpolation=cv2.INTER_AREA)
+        self.photo = ImageTk.PhotoImage(Image.fromarray(cv2.cvtColor(small, cv2.COLOR_BGR2RGB)))
+        self.video.configure(image=self.photo)
+
+    def _sync(self, st):
+        rows = st.get("rows", [])
+        done = sum(1 for _, ok in rows if ok)
+        self.count.configure(text=f"{done} / {len(rows)}")
+        self.bar.delete("all")
+        self.bar.create_rectangle(0, 0, self.bar.winfo_width() * done / max(len(rows), 1), 6,
+                                  fill=G, width=0)
+        if rows != self.shown_rows:
+            self.shown_rows = rows
+            self._rebuild(rows)
+
+        text, expire = self.msg
+        if text and time.time() < expire:
+            self.dot.configure(fg=DIM)
+            self.state.configure(text=text)
+        elif st["holding"]:
+            self.dot.configure(fg=G)
+            self.state.configure(text=f"กำลังหยิบตรวจ · {st['held_s']:0.1f} วิ")
+        else:
+            self.dot.configure(fg=Y if rows else DIM)
+            self.state.configure(text="รอมือมาหยิบชิ้นงาน")
+        self.stats.configure(
+            text=f"{st['fps']:0.1f} FPS · {st['device']} · {st['hands']} มือ · "
+                 f"รอบนี้ {st.get('round_s', 0) / 60:0.0f} นาที")
+
+    def _rebuild(self, rows):
+        for w in self.list.winfo_children():
+            w.destroy()
+        if not rows:
+            tk.Label(self.list, text="ยังไม่เห็นชิ้นงานในเฟรม", bg=BG, fg=DIM,
+                     font=(UI, 10)).pack(anchor="w", pady=8)
+            return
+        for tid, ok in rows:
+            row = tk.Frame(self.list, bg=CARD)
+            row.pack(fill="x", pady=3)
+            tk.Label(row, text="✓" if ok else "○", bg=CARD, fg=G if ok else Y,
+                     font=(UI, 13, "bold"), width=2).pack(side="left", padx=(10, 2), pady=8)
+            tk.Label(row, text=f"ชิ้น #{tid}", bg=CARD, fg=TXT,
+                     font=(UI, 12, "bold")).pack(side="left")
+            tk.Label(row, text="ตรวจแล้ว" if ok else "ยังไม่ตรวจ", bg=CARD, fg=G if ok else DIM,
+                     font=(UI, 10)).pack(side="right", padx=12)
+
+
 # ─────────────────────────── main ───────────────────────────
-WINDOW = "cup-holding detector"
-
-
 def main():
     if sys.version_info[:2] not in ((3, 11), (3, 12), (3, 13)):
         v = f"{sys.version_info.major}.{sys.version_info.minor}"
@@ -564,18 +771,12 @@ def main():
     cam = Camera(cfg["camera_index"], mirror=cfg.get("mirror", True),
                  width=cfg.get("camera_width"), height=cfg.get("camera_height"))
 
-    cv2.namedWindow(WINDOW, cv2.WINDOW_NORMAL | cv2.WINDOW_KEEPRATIO | cv2.WINDOW_GUI_NORMAL)
-    ww = int(cfg.get("window_width", 1280))
-    cv2.resizeWindow(WINDOW, ww, ww * 9 // 16)
-
+    print("กำลังเปิดกล้อง...")
     t0 = time.time()
     while not cam.read()[0]:
-        cv2.imshow(WINDOW, splash("opening camera", ww))
-        if cv2.waitKey(80) & 0xFF in (ord("q"), 27):
-            cam.release(); cv2.destroyAllWindows(); return
+        time.sleep(0.05)
         if time.time() - t0 > 10:
             cam.release()
-            cv2.destroyAllWindows()
             raise SystemExit(
                 f"\nเปิดกล้องไม่ได้ (camera_index = {cfg['camera_index']})\n"
                 "เช็กว่ากล้องเสียบอยู่ ไม่มีโปรแกรมอื่นแย่งใช้ แล้วลองเปลี่ยน "
@@ -583,33 +784,12 @@ def main():
             )
 
     analyzer = Analyzer(cam, model, hands, cfg)
-    full = False
-
-    # main แค่แสดงเฟรมที่ analyzer วาดผลเสร็จแล้ว + รับปุ่ม (จอเดินเท่า detect FPS)
-    while True:
-        frame = analyzer.latest()
-        cv2.imshow(WINDOW, frame if frame is not None else splash("starting model", ww))
-        k = cv2.waitKey(15) & 0xFF
-        if k in (ord("q"), 27):
-            break
-        elif k == ord("f"):
-            full = not full
-            cv2.setWindowProperty(WINDOW, cv2.WND_PROP_FULLSCREEN,
-                                  cv2.WINDOW_FULLSCREEN if full else cv2.WINDOW_NORMAL)
-        elif k == ord("s") and frame is not None:
-            fn = f"shot_{int(time.time())}.png"
-            cv2.imwrite(fn, frame)
-            print("เซฟภาพ:", fn)
-            analyzer.toast = (f"saved  {fn}", time.time() + 2.0)
-        elif k == ord("d"):
-            analyzer.debug = not analyzer.debug
-            analyzer.toast = (f"debug {'on' if analyzer.debug else 'off'}", time.time() + 1.5)
-        if cv2.getWindowProperty(WINDOW, cv2.WND_PROP_VISIBLE) < 1:
-            break                       # กดปิดหน้าต่าง
+    root = tk.Tk()
+    App(root, analyzer, cfg)
+    root.mainloop()
 
     analyzer.release()
     cam.release()
-    cv2.destroyAllWindows()
 
 
 if __name__ == "__main__":
