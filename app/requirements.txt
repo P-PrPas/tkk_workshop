@@ -5,7 +5,8 @@ mediapipe==1.0.1
 opencv-python==4.10.*
 pillow==12.*        # HUD วาดตัวหนังสือด้วย PIL + DejaVu (มากับ matplotlib/ultralytics อยู่แล้ว)
 pyyaml==6.*
-# tkinter (GUI) มากับ Python บน Windows/macOS อยู่แล้ว — ลินุกซ์บางดิสโทร: sudo apt install python3-tk
+PySide6-Essentials==6.10.*   # GUI — ตัว Essentials ไม่ใช่ PySide6 เต็ม (เล็กกว่าครึ่ง ใช้แค่ Widgets/Gui/Core)
+                             # รองรับ Python 3.9–3.14 · ลินุกซ์ headless ต้องมี libGL: sudo apt install libgl1
 # torch มากับ ultralytics — เร่ง GPU ต้องลงเองให้ตรงเครื่อง แล้วตั้ง device: ใน config.yaml
 #   NVIDIA (Win/Linux): pip install --force-reinstall torch torchvision --index-url https://download.pytorch.org/whl/cu124
 #                       (เลี่ยง cuXXX ที่สูงกว่า "CUDA Version" ใน nvidia-smi) แล้ว device: cuda
