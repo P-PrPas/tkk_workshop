@@ -14,8 +14,11 @@
 </p>
 
 <p align="center">
-  <img src="docs/app-hud.png" alt="The desktop app: live HUD showing HOLDING state, detect FPS, tracked cups and hand skeletons" width="820">
+  <img src="docs/app-hud.png" alt="The desktop app: live view with tracked cups, hand skeletons and the inspection checklist" width="820">
 </p>
+
+<p align="center"><sub>⚠ Screenshot predates the Tkinter rewrite — re-shoot it on the
+demo laptop before the event.</sub></p>
 
 > **The whole point of this workshop:** making something that _sort of_ works is easy.
 > Making it work _for real_ is hard. The notebook shows the easy 80%. The desktop app
@@ -54,7 +57,9 @@ same task as the notebook, but built to survive a live room.
 | Students | [`notebooks/cv101.ipynb`](notebooks/cv101.ipynb) | Google Colab (free CPU) |
 | Instructor | [`app/app.py`](app/app.py) | A laptop with a webcam |
 
-The task in both: **decide whether a person is holding a cup**, live, from a webcam.
+The task in both: **track which items an operator has picked up and inspected**, live,
+from a webcam. Every cup on the table gets an ID and a motion trail; a yellow box means
+_not inspected yet_, a green box with a ✓ means _done_. One button starts a new round.
 
 ---
 
@@ -83,7 +88,8 @@ is what transfer learning actually looks like — not training from zero on 10 i
 Hand landmarks (MediaPipe, 21 points) + cup boxes (YOLO). If enough hand points fall
 inside a cup box **and** the hand and the cup are roughly the same size on screen
 (so a hand pointing from across the room doesn’t count) → the hand is on the cup.
-Wrap that in a small state machine → `HOLDING`.
+Wrap that in a small state machine → `HOLDING`. Hold one cup long enough → that cup
+is marked **inspected**, and stays marked even after it is put back down.
 
 ### What the app adds around the rule
 
@@ -94,8 +100,9 @@ The rule is identical to the notebook. Everything below is the “make it real�
 | 1 | **Threaded capture + inference** | No latency build-up; boxes stay glued to the frame the model actually saw |
 | 2 | **ByteTrack IDs + `CupMemory`** | A cup hidden by the gripping hand keeps its identity and position for ~1 s |
 | 3 | **`HoldState` hysteresis** (3 up / 6 down) | The `HOLDING` label stops flickering at the boundary |
-| 4 | **Real error handling** | Camera unplugged → reconnects itself; missing model/camera → a helpful message, not a traceback |
-| 5 | **A readable HUD** | Resizable / fullscreen window, status panel, live FPS, on-screen controls |
+| 4 | **`Inspection` checklist** | A hand brushing past a cup no longer ticks it off — a leaky counter demands ~1 s of real holding. Ticks persist; `R` starts a new round |
+| 5 | **Real error handling** | Camera unplugged → reconnects itself; missing model/camera → a helpful message, not a traceback |
+| 6 | **A real GUI** (Tkinter, stdlib) | The checklist is a live list and needs a reset button — both are painful drawn onto a video frame. Also gets you system fonts, so the UI can speak Thai |
 
 ---
 
@@ -105,7 +112,7 @@ The rule is identical to the notebook. Everything below is the “make it real�
 tkk_workshop/
 ├── notebooks/cv101.ipynb     # the class runs this on Colab
 ├── app/
-│   ├── app.py                # the instructor runs this — Camera / Analyzer / HUD, one file
+│   ├── app.py                # the instructor runs this — Camera / Analyzer / Inspection / GUI, one file
 │   ├── config.yaml           # every value you might tune in the room
 │   ├── requirements.txt      # pinned to match the notebook
 │   └── test_app.py           # logic self-check, no camera needed
@@ -214,14 +221,17 @@ python app/test_app.py
 
 ### Controls
 
+Every button in the sidebar has a keyboard shortcut:
+
 | Key | Action |
 | --- | --- |
-| `Q` / `Esc` / close window | Quit |
-| `S` | Save a still (`shot_<timestamp>.png`, HUD included) |
+| `R` | Start a new inspection round — clears the checklist, trails and track IDs |
+| `S` | Save a still (`shot_<timestamp>.png`, camera view only) |
 | `D` | Toggle debug overlay (hand points-in-box count) |
 | `F` | Toggle fullscreen ↔ windowed |
+| `Q` / `Esc` / close window | Quit |
 
-The window is freely resizable — drag any edge; aspect ratio is preserved.
+The window is freely resizable — drag any edge; the video is letterboxed to fit.
 
 ### `config.yaml`
 
@@ -244,6 +254,9 @@ during an event.**
 | `grip_box_margin` | `0.35` | Cup box is expanded by this fraction before counting points |
 | `grip_max_size_ratio` | `4.0` | Max hand/cup size ratio — rejects a hand pointing from far away |
 | `hold_frames` / `release_frames` | `3` / `6` | Hysteresis: frames to latch `HOLDING` on / off (off > on = no flicker) |
+| `pick_frames` | `8` | Frames of accumulated holding before a cup is ticked as inspected (a brush-past does not count) |
+| `trail_length` | `60` | Points kept in each cup’s motion trail — `0` disables trails |
+| `forget_seconds` | `4` | An *uninspected* cup gone this long drops off the checklist; inspected ones stay until reset |
 
 ### Choosing a compute device (CUDA / MPS / CPU)
 
@@ -260,7 +273,9 @@ startup log always show what is actually running.
 | Symptom | Fix |
 | --- | --- |
 | `module 'torch' has no attribute 'save'` | You’re on Python 3.14. Make the venv with **3.12**. |
-| Window says “opening camera” forever | Another app is using the camera, or wrong index — try `camera_index: 1`. |
+| Exits with “เปิดกล้องไม่ได้” after 10 s | Another app is using the camera, or wrong index — try `camera_index: 1`. |
+| `ModuleNotFoundError: tkinter` (Linux) | `sudo apt install python3-tk` — Tk ships with Python on Windows and macOS. |
+| A cup gets ticked when you only reach past it | Raise `pick_frames`. Ticked too slowly? Lower it. |
 | Cups not detected | Lower `conf` to `0.15`; check lighting; try `imgsz: 640`. |
 | `HOLDING` flickers | Increase `release_frames`. |
 | ~5 FPS | Enable the GPU (see step 3) or switch to `best.onnx` + `onnxruntime`. |
