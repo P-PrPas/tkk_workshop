@@ -21,8 +21,8 @@ tkk_workshop/            ← repo นี้
 ├── CLAUDE.md
 ├── docs/                ← 00 ภาพรวม, 01 สเปกโน้ตบุ๊ก, 02 ข้อมูล, 03 โมเดล, 04 แอป
 ├── notebooks/cv101.ipynb
-├── app/{app.py,config.yaml}
-├── tools/build_bigdata.py
+├── app/{vision.py,overlay.py,app.py,config.yaml}   ← คิด / วาดลงเฟรม / แสดงผล
+├── tools/{build_bigdata.py,ui_preview.py}
 └── data/                ← submodule → github.com/P-PrPas/tkk_workshop-data
 ```
 
@@ -37,6 +37,10 @@ tkk_workshop/            ← repo นี้
 6. **markdown ภาษาไทย โค้ดภาษาอังกฤษ** ทั้งไฟล์
 7. **pin เวอร์ชัน dependency ทุกตัว** ถ้าเปลี่ยน ต้องรันโน้ตบุ๊กใหม่ทั้งไฟล์ก่อนวันงาน
 8. **ค่าที่ต้องจูนหน้างานต้องอยู่ใน `config.yaml`** ห้ามฝังในโค้ดแอป
+9. **ตัวเลขบน UI เป็นฟอนต์ mono เสมอ ข้อความร้อยแก้วเป็นฟอนต์สัดส่วน** — ตัวเลขที่เปลี่ยน
+   ทุกเฟรมด้วยฟอนต์สัดส่วนจะขยับซ้าย-ขวาตลอด อ่านจากท้ายห้องไม่ได้
+10. **สีที่เป็นสัญญาณมีสองสี** เขียว `#3DD68C` (ตรวจแล้ว) · อำพัน `#F2B34B` (ยังไม่ตรวจ)
+    ชุดเดียวกันอยู่ทั้งใน `app.py` (hex) และ `overlay.py` (BGR) — แก้ต้องแก้คู่กัน
 
 ## ข้อเท็จจริงที่ตรวจสอบแล้ว อย่าเสียเวลาตรวจซ้ำ
 - Ultralytics **ไม่มี** hand-pose checkpoint สำเร็จรูป มีแต่ body pose 17 จุด
@@ -46,15 +50,18 @@ tkk_workshop/            ← repo นี้
 - COCO class id ของ `cup` = **41** (ใช้ตอน auto-label และตอน fallback)
 - `model.track()` ต้องมี `lap`/`lapx` — โน้ตบุ๊กลง `lapx` ตั้งแต่เซลล์ 0 ไม่งั้น ultralytics
   ไป `pip install` เองกลางเดโม · แอปมี `lap` ใน requirements แล้ว
-- UI ของแอปเป็น **Tkinter** (มากับ Python ไม่ต้องลงเพิ่ม) ไม่ใช่หน้าต่าง cv2 แล้ว —
-  เช็กลิสต์ต้องเป็นรายการ + ปุ่ม reset · ข้อความบนวิดเจ็ตเป็นไทยได้ แต่ข้อความที่วาด
-  ลงบนเฟรม (PIL/DejaVu) ยังต้องเป็นอังกฤษ
+- UI ของแอปเป็น **PySide6 (Qt)** — `PySide6-Essentials==6.10.*` รองรับ Python 3.9–3.14
+  ข้อความบนวิดเจ็ตเป็นไทยได้ (font fallback รายตัวอักษร) แต่ข้อความที่วาดลงบนเฟรม
+  (PIL/DejaVu) ยังต้องเป็นอังกฤษ · **ห้ามใช้ QSS `background:` บน widget แม่** — มันไหลลง
+  ลูกทุกตัว ใช้ `ground()` (QPalette) แทน
 - เครื่องพัฒนามี Tesla V100 32GB แต่ **ไม่มีกล้อง** — ทดสอบ realtime บนเครื่องนี้ไม่ได้
 
 ## คำสั่งที่ใช้บ่อย
 ```bash
 python tools/build_bigdata.py                # ดึง COCO cup มาเตรียมเทรนโมเดลดี
-python app/app.py                            # รันแอป
+python app/app.py                            # รันแอป (ต้องมีกล้อง)
+python tools/ui_preview.py                   # เรนเดอร์หน้าจอเป็น docs/app-ui.png (ไม่ต้องมีกล้อง)
+python app/test_vision.py                    # self-check ตรรกะ
 git clone --recursive <code repo>            # ฝั่งนักพัฒนา ต้องมี --recursive
 ```
 
