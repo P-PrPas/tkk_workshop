@@ -9,16 +9,17 @@
   <img alt="Python" src="https://img.shields.io/badge/Python-3.12%20%7C%203.13-3776AB?logo=python&logoColor=white">
   <img alt="Ultralytics" src="https://img.shields.io/badge/Ultralytics-8.3-0b5394">
   <img alt="MediaPipe" src="https://img.shields.io/badge/MediaPipe-1.0.1-00897B">
+  <img alt="PySide6" src="https://img.shields.io/badge/PySide6-6.10-41CD52?logo=qt&logoColor=white">
   <a href="https://colab.research.google.com/github/P-PrPas/tkk_workshop/blob/main/notebooks/cv101.ipynb">
     <img alt="Open in Colab" src="https://img.shields.io/badge/Open%20in-Colab-F9AB00?logo=googlecolab&logoColor=white"></a>
 </p>
 
 <p align="center">
-  <img src="docs/app-hud.png" alt="The desktop app: live view with tracked cups, hand skeletons and the inspection checklist" width="820">
+  <img src="docs/app-ui.png" alt="Inspection Station: live view with tracked cups, hand skeletons, the slot-meter checklist and the event log" width="880">
 </p>
 
-<p align="center"><sub>⚠ Screenshot predates the Tkinter rewrite — re-shoot it on the
-demo laptop before the event.</sub></p>
+<p align="center"><sub>Rendered by <code>tools/ui_preview.py</code> with a synthetic scene —
+no camera required. Re-shoot from the live app on the demo laptop before the event.</sub></p>
 
 > **The whole point of this workshop:** making something that _sort of_ works is easy.
 > Making it work _for real_ is hard. The notebook shows the easy 80%. The desktop app
@@ -56,6 +57,9 @@ same task as the notebook, but built to survive a live room.
 | --- | --- | --- |
 | Students | [`notebooks/cv101.ipynb`](notebooks/cv101.ipynb) | Google Colab (free CPU) |
 | Instructor | [`app/app.py`](app/app.py) | A laptop with a webcam |
+
+The app is a Qt (PySide6) instrument panel: video on the left, a slot-meter checklist
+and a round event log on the right, telemetry on the status strip.
 
 The task in both: **track which items an operator has picked up and inspected**, live,
 from a webcam. Every cup on the table gets an ID and a motion trail; a yellow box means
@@ -102,7 +106,7 @@ The rule is identical to the notebook. Everything below is the “make it real�
 | 3 | **`HoldState` hysteresis** (3 up / 6 down) | The `HOLDING` label stops flickering at the boundary |
 | 4 | **`Inspection` checklist** | A hand brushing past a cup no longer ticks it off — a leaky counter demands ~1 s of real holding. Ticks persist; `R` starts a new round |
 | 5 | **Real error handling** | Camera unplugged → reconnects itself; missing model/camera → a helpful message, not a traceback |
-| 6 | **A real GUI** (Tkinter, stdlib) | The checklist is a live list and needs a reset button — both are painful drawn onto a video frame. Also gets you system fonts, so the UI can speak Thai |
+| 6 | **A real GUI** (PySide6 / Qt) | The checklist is a live list and needs a reset button — both are painful drawn onto a video frame. Qt also brings HiDPI scaling for the projector, antialiased custom painting, and system fonts, so the UI can speak Thai |
 
 ---
 
@@ -112,10 +116,12 @@ The rule is identical to the notebook. Everything below is the “make it real�
 tkk_workshop/
 ├── notebooks/cv101.ipynb     # the class runs this on Colab
 ├── app/
-│   ├── app.py                # the instructor runs this — Camera / Analyzer / Inspection / GUI, one file
+│   ├── app.py                # the instructor runs this — the Qt window, display only
+│   ├── vision.py             # Camera / Analyzer / rules / Inspection — no GUI in it
+│   ├── overlay.py            # what gets drawn onto the frame — no torch in it
 │   ├── config.yaml           # every value you might tune in the room
 │   ├── requirements.txt      # pinned to match the notebook
-│   └── test_app.py           # logic self-check, no camera needed
+│   └── test_vision.py        # logic self-check, no camera needed
 ├── tools/                    # build the big dataset, train the good model, profile, debug
 ├── docs/                     # design notes (00–04, Thai) — read 00 first
 └── data/                     # git submodule → in-room images + labels + model mirror
@@ -212,7 +218,7 @@ The console prints the device it chose: `YOLO device: CUDA / MPS / CPU`.
 **5. (optional) Check the logic**
 
 ```bash
-python app/test_app.py
+python app/test_vision.py
 ```
 
 ---
@@ -274,7 +280,8 @@ startup log always show what is actually running.
 | --- | --- |
 | `module 'torch' has no attribute 'save'` | You’re on Python 3.14. Make the venv with **3.12**. |
 | Exits with “เปิดกล้องไม่ได้” after 10 s | Another app is using the camera, or wrong index — try `camera_index: 1`. |
-| `ModuleNotFoundError: tkinter` (Linux) | `sudo apt install python3-tk` — Tk ships with Python on Windows and macOS. |
+| `ModuleNotFoundError: PySide6` | `pip install -r app/requirements.txt` (it is `PySide6-Essentials`, not full `PySide6`). |
+| Qt exits with `libGL.so.1: cannot open` (Linux) | `sudo apt install libgl1 libegl1` — Qt needs them; Windows and macOS do not. |
 | A cup gets ticked when you only reach past it | Raise `pick_frames`. Ticked too slowly? Lower it. |
 | Cups not detected | Lower `conf` to `0.15`; check lighting; try `imgsz: 640`. |
 | `HOLDING` flickers | Increase `release_frames`. |
@@ -295,7 +302,9 @@ python tools/eval.py runs/detect/cup_big/weights/best.pt   # mAP + visual sanity
 ```
 
 Other tools: `tools/diag.py` (print every HOLDING signal per frame),
-`tools/optimize.py` (benchmark ONNX / OpenVINO on the target CPU).
+`tools/optimize.py` (benchmark ONNX / OpenVINO on the target CPU),
+`tools/ui_preview.py` (render the whole window to `docs/app-ui.png` from a synthetic
+scene — iterate on the UI on a machine with no camera and no CV stack installed).
 
 ---
 
@@ -322,4 +331,4 @@ Ask the repository owner before reusing.
 <p align="center"><sub>Built with
 <a href="https://docs.ultralytics.com/">Ultralytics YOLO11</a> ·
 <a href="https://ai.google.dev/edge/mediapipe">MediaPipe Hand Landmarker</a> ·
-OpenCV · Pillow</sub></p>
+OpenCV · Pillow · Qt for Python</sub></p>
