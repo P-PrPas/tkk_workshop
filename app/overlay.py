@@ -15,13 +15,21 @@ from PIL import Image, ImageDraw, ImageFont
 
 # ทุกข้อความบนจอเป็นภาษาอังกฤษ — DejaVu ไม่มี glyph ไทย (ไทยไปที่วิดเจ็ต Qt)
 # สีชุดเดียวกับ UI ใน app.py — ภาพกับแผงข้างต้องดูเป็นเครื่องเดียวกัน (BGR)
-INK   = (27, 20, 16)      # พื้นแผงโปร่งแสง       #10141B
-FG    = (243, 236, 231)   # อักษรหลัก             #E7ECF3
-MUTED = (150, 132, 122)   # อักษรรอง              #7A8496
-OK    = (140, 214, 61)    # มือจับแก้ว / ตรวจแล้ว  #3DD68C
-WARN  = (75, 179, 242)    # ยังไม่ตรวจ (อำพัน)     #F2B34B
+INK   = (27, 20, 16)      # พื้นแผงโปร่งแสง        #10141B
+FG    = (243, 236, 231)   # อักษรหลัก              #E7ECF3
+MUTED = (150, 132, 122)   # อักษรรอง               #7A8496
+HALO  = (10, 12, 16)      # ขอบดำใต้ทุกเส้น — ทำให้ bbox/โครงมือตัดกับพื้นสว่างของโต๊ะ
+
+# --- สองสีสัญญาณของ "การตรวจ" อยู่บน bbox ของแก้วเท่านั้น (ล็อก — ตรงกับ app.py) ---
+OK    = (140, 214, 61)    # ตรวจแล้ว               #3DD68C   = app.SIGNAL
+WARN  = (75, 179, 242)    # ยังไม่ตรวจ             #F2B34B   = app.AMBER
 DONE, TODO = OK, WARN
-STATE_COLOR = {"FIST": OK, "OPEN": (200, 190, 175), "MID": WARN}   # สีโครงมือตามท่า (พาร์ท 2)
+
+# --- โครงมือเป็นคนละแกนสี (น้ำเงิน = เย็น) จะได้ไม่ปนกับ bbox · สว่างขึ้นเมื่อมือกำเข้า ---
+HAND_OPEN = (192, 168, 146)   # แบ    #92A8C0  น้ำเงินหม่น เกือบเทา
+HAND_MID  = (232, 165, 107)   # กลาง  #6BA5E8
+HAND_FIST = (246, 130, 59)    # กำ    #3B82F6  น้ำเงินสด
+STATE_COLOR = {"FIST": HAND_FIST, "OPEN": HAND_OPEN, "MID": HAND_MID}   # สีโครงมือตามท่า (พาร์ท 2)
 
 HAND_EDGES = [(0, 1), (1, 2), (2, 3), (3, 4), (0, 5), (5, 6), (6, 7), (7, 8),
               (5, 9), (9, 10), (10, 11), (11, 12), (9, 13), (13, 14), (14, 15),
@@ -50,6 +58,12 @@ def font(px, bold=False):
         hit = hit or ImageFont.load_default(px)
         _FONTS[(px, bold)] = hit
     return hit
+
+
+def _line(frame, p1, p2, col, w, halo):
+    """เส้นสี + ขอบดำใต้เส้น — เส้น bbox / โครงมือ อ่านออกทั้งบนพื้นมืดและพื้นสว่าง"""
+    cv2.line(frame, p1, p2, HALO, w + halo, cv2.LINE_AA)
+    cv2.line(frame, p1, p2, col, w, cv2.LINE_AA)
 
 
 def _round_rect(img, x1, y1, x2, y2, r, color):
@@ -111,21 +125,29 @@ def draw(frame, cups, hands, held_ids, insp, debug):
         col = DONE if done else TODO
         trail = insp.trails.get(tid)
         if trail and len(trail) > 1:
-            cv2.polylines(frame, [np.array(trail, np.int32)], False, col, px(2), cv2.LINE_AA)
+            path = [np.array(trail, np.int32)]
+            cv2.polylines(frame, path, False, HALO, px(5), cv2.LINE_AA)
+            cv2.polylines(frame, path, False, col, px(2), cv2.LINE_AA)
         x1, y1, x2, y2 = map(int, box)
-        L, t = px(26), px(4 if tid in held_ids else 2)
+        held = tid in held_ids
+        t, halo = px(6 if held else 4), px(3)
+        L = max(px(14), min(px(36), (x2 - x1) // 3, (y2 - y1) // 3))   # วงเล็บมุมสั้นลงตามกล่องเล็ก ไม่ให้ชนกลาง
+        cv2.rectangle(frame, (x1, y1), (x2, y2), HALO, px(3), cv2.LINE_AA)
+        cv2.rectangle(frame, (x1, y1), (x2, y2), col, px(1), cv2.LINE_AA)   # เส้นเต็มบาง ๆ ให้เห็นทั้งกล่อง
         for cx, sx in ((x1, 1), (x2, -1)):
-            for cy, sy in ((y1, 1), (y2, -1)):
-                cv2.line(frame, (cx, cy), (cx + sx * L, cy), col, t, cv2.LINE_AA)
-                cv2.line(frame, (cx, cy), (cx, cy + sy * L), col, t, cv2.LINE_AA)
+            for cy, sy in ((y1, 1), (y2, -1)):                              # วงเล็บมุมหนา — ตัวเน้น
+                _line(frame, (cx, cy), (cx + sx * L, cy), col, t, halo)
+                _line(frame, (cx, cy), (cx, cy + sy * L), col, t, halo)
         _chip(frame, T, x1, y1 - px(32), f"#{tid}" + ("  ✓" if done else ""), col, u)
 
     # ── โครงมือ: สีตามท่า (พาร์ท 2) · เขียวเมื่อจับแก้ว ──
     for pts, on_cup, state, pts_in in hands:
-        col = OK if on_cup else STATE_COLOR[state]
+        col = STATE_COLOR[state]                    # สีตามท่า (กำ/แบ/กลาง) — ไม่เปลี่ยนเป็นสี bbox ตอนจับแก้ว
+        w = px(4 if on_cup else 3)                  # จับแก้วอยู่ = เส้นหนาขึ้น (นอกจากป้าย on cup)
         for a, b in HAND_EDGES:
-            cv2.line(frame, pts[a], pts[b], col, px(2), cv2.LINE_AA)
+            _line(frame, pts[a], pts[b], col, w, px(2))
         for x, y in pts:
+            cv2.circle(frame, (x, y), px(3) + px(2), HALO, -1, cv2.LINE_AA)
             cv2.circle(frame, (x, y), px(3), col, -1, cv2.LINE_AA)
         msg = state + ("  on cup" if on_cup else "") + (f"   pts:{pts_in}" if debug else "")
         _put(T, pts[0][0], pts[0][1] + px(18), msg, font(15 * u, True), col, "lm")
