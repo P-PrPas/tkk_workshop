@@ -197,8 +197,10 @@ class Viewport(QWidget):
 
         live = self.st.get("camera", True)
         self._marker(p, box.left() + 22, box.top() + 34, live)
-        chips = [f"{self.st.get('fps', 0):.1f} FPS", self.st.get("device", "—"),
-                 f"{self.st.get('hands', 0)} HAND" + ("S" if self.st.get("hands", 0) != 1 else "")]
+        n = self.st.get("hands", 0)      # กล้องหลุด = ตัวเลขค้างอยู่ อย่าโชว์ให้เข้าใจผิดว่ายังเดินอยู่
+        chips = [f"{self.st.get('fps', 0):.1f} FPS" if live else "— FPS",
+                 self.st.get("device", "—"),
+                 f"{n} HAND" + ("S" if n != 1 else "") if live else "— HANDS"]
         cx = box.left() + 20
         for c in chips:
             cx += self._chip(p, cx, box.bottom() - 42, c) + 8
@@ -233,8 +235,8 @@ class Viewport(QWidget):
 
 
 # ─────────────────────────── เช็กลิสต์ ───────────────────────────
-ROW_H, MAX_ROWS = 46, 7      # ponytail: ไม่มี scrollbar — เกิน 7 ชิ้นสรุปเป็นบรรทัดเดียว
-LOG_ROWS = 5                 # บันทึกเหตุการณ์ท้ายแผง
+ROW_H = 46       # ponytail: ไม่มี scrollbar — เกินที่ว่างสรุปเป็น "+ อีก N ชิ้น" บรรทัดเดียว
+LOG_ROWS = 5     # บันทึกเหตุการณ์ท้ายแผง
 
 
 class Rack(QWidget):
@@ -301,26 +303,34 @@ class Rack(QWidget):
         p.drawLine(pad, y + 30, W - pad, y + 30)
         text(p, pad, y + 44, "รายการชิ้นงาน", face(11, QFont.Weight.DemiBold, track=1.2), FAINT)
 
-        # ── แถวชิ้นงาน ──
+        # ── แถวชิ้นงาน — จำนวนแถวที่โชว์คิดจากที่ว่างจริง ไม่ใช่ค่าคงที่ ──
+        # (จอเล็ก/จอโปรเจกเตอร์สูงไม่เท่ากัน ตัวเลขตายตัวจะไปทับบันทึกเหตุการณ์)
+        # รายการได้ที่ก่อน บันทึกเหตุการณ์หดลงเหลืออย่างน้อย 2 บรรทัดเมื่อชิ้นงานเยอะ
         top = y + 68
+        want = len(self.rows) * (ROW_H + 6)
+        log_n = max(2, min(LOG_ROWS, int((self.height() - top - want - 44) // 22)))
+        base = self.height() - log_n * 22 - 34           # ขอบบนของบันทึกเหตุการณ์
+        room = base - 14 - top
+        cap = max(1, int(room // (ROW_H + 6)))
         if not self.rows:
             text(p, pad, top + 10, "ยังไม่เห็นชิ้นงานในเฟรม", face(12), FAINT)
             text(p, pad, top + 32, "วางแก้วให้กล้องเห็น แล้วหยิบขึ้นมาตรวจ",
                  face(11), QColor(FAINT).darker(125).name())
         else:
-            for i, (tid, ok, prog, held_s) in enumerate(self.rows[:MAX_ROWS]):
+            shown = self.rows[:cap]
+            if len(shown) < len(self.rows) and cap * (ROW_H + 6) + 20 > room:
+                shown = shown[:-1] or shown       # ยอมทิ้งอีกแถวเพื่อให้ "+ อีก N ชิ้น" มีที่ยืน
+            for i, (tid, ok, prog, held_s) in enumerate(shown):
                 self._row(p, pad, top + i * (ROW_H + 6), inner, tid, ok, prog, held_s)
-            extra = len(self.rows) - MAX_ROWS
-            if extra > 0:
-                text(p, pad, top + MAX_ROWS * (ROW_H + 6) + 8,
-                     f"+ อีก {extra} ชิ้น", face(11), FAINT)
+            if len(shown) < len(self.rows):
+                text(p, pad, top + len(shown) * (ROW_H + 6) + 6,
+                     f"+ อีก {len(self.rows) - len(shown)} ชิ้น", face(11), FAINT)
 
         # ── บันทึกเหตุการณ์ — ยึดขอบล่างของแผง ใหม่สุดอยู่บน ──
-        base = self.height() - LOG_ROWS * 22 - 34
         p.setPen(pen(LINE))
         p.drawLine(pad, base - 14, W - pad, base - 14)
         text(p, pad, base, "บันทึกเหตุการณ์", face(11, QFont.Weight.DemiBold, track=1.2), FAINT)
-        for i in range(LOG_ROWS):
+        for i in range(log_n):
             ly = base + 22 + i * 22
             if i < len(self.log):
                 when, what = self.log[i]

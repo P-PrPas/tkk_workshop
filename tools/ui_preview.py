@@ -3,7 +3,8 @@
 ป้อน Analyzer ปลอมที่คืนเฟรมสังเคราะห์ + เช็กลิสต์ตัวอย่างให้ `app.Station`
 ใช้เวลาแก้ layout/สี: แก้แล้วรันอันนี้ ดูรูป ไม่ต้องรอวันที่มีกล้อง
 
-    python tools/ui_preview.py            # -> docs/app-ui.png
+    python tools/ui_preview.py                    # ฉากปกติ -> docs/app-ui.png
+    python tools/ui_preview.py empty out.png      # สถานะอื่น: empty · done · many · lost
 """
 import sys
 import time
@@ -60,15 +61,27 @@ def fake_frame():
     return overlay.draw(frame, cups, hands, HELD, insp, False), insp
 
 
+# สถานะที่ต้องดูตอนแก้ดีไซน์ — ว่างเปล่า / ครบทุกชิ้น / ของเยอะเกินรายการ / กล้องหลุด
+STATES = {
+    "live":  lambda r: (r, True),
+    "empty": lambda r: ([], True),
+    "done":  lambda r: ([(t, True, 1.0, 30 + t) for t, _, _, _ in r], True),
+    "many":  lambda r: ([(t, t % 3 == 0, 1.0 if t % 3 == 0 else t / 20, 12) for t in range(1, 12)], True),
+    "lost":  lambda r: (r, False),
+}
+
+
 class FakeAnalyzer:
-    def __init__(self, frame, insp):
+    def __init__(self, frame, insp, state):
         self.frame, self.insp, self.debug = frame, insp, False
-        self.events = deque([(time.strftime("%H:%M:%S"), "ตรวจแล้ว · ชิ้น #2")])
+        self.rows, self.camera = STATES[state](insp.rows())
+        self.events = deque([(time.strftime("%H:%M:%S"), f"ตรวจแล้ว · ชิ้น #{t}")
+                             for t, ok, *_ in self.rows if ok][:3])
 
     def latest(self):
         return 1, self.frame.copy(), {
-            "holding": True, "held_s": 3.4, "fps": 28.6, "hands": 1, "camera": True,
-            "device": "CUDA", "rows": self.insp.rows(), "round_s": 252,
+            "holding": self.camera, "held_s": 3.4, "fps": 28.6, "hands": 1,
+            "camera": self.camera, "device": "CUDA", "rows": self.rows, "round_s": 252,
         }
 
     def reset(self):
@@ -76,15 +89,18 @@ class FakeAnalyzer:
 
 
 def main():
+    state = sys.argv[1] if len(sys.argv) > 1 else "live"
+    out = Path(sys.argv[2]) if len(sys.argv) > 2 else ROOT / "docs" / "app-ui.png"
     frame, insp = fake_frame()
-    qt = QApplication(sys.argv)
-    win = ui.Station(FakeAnalyzer(frame, insp), {"window_width": 1280})
+    if state == "lost":
+        frame = overlay.splash("reconnecting camera")
+    qt = QApplication(sys.argv[:1])
+    win = ui.Station(FakeAnalyzer(frame, insp, state), {"window_width": 1280})
     win.resize(1640, 812)
     win.show()
     qt.processEvents()
     win.tick()
     qt.processEvents()
-    out = ROOT / "docs" / "app-ui.png"
     win.grab().save(str(out))
     print("wrote", out)
 
