@@ -178,15 +178,22 @@ class Camera:
     """อ่านกล้องในเธรดแยกแบบไม่หยุด เก็บเฉพาะเฟรมล่าสุด (mirror ให้ด้วยถ้า mirror=True)
     กล้องหลุด → ต่อใหม่ทุก 1 วินาที (`read()[0]` เป็น False ระหว่างนั้น)"""
 
-    def __init__(self, index, mirror=True, width=None, height=None):
+    def __init__(self, index, mirror=True, width=None, height=None, available=None):
         self.index, self.mirror = index, mirror
         self.width, self.height = width, height
+        self.available = available or [index]   # index ที่เปิดได้ตอนสำรวจ — ให้ปุ่มเลือกกล้องใน GUI
         self.lock = threading.Lock()
         self.frame = None
         self.ok = False
         self._stop = False
+        self._switch = False
         self.cap = self._open()
         threading.Thread(target=self._loop, daemon=True).start()
+
+    def switch(self, index):
+        """สลับกล้องระหว่างรัน — ยกธง เธรด _loop เปิดตัวใหม่ให้ตอนวนรอบถัดไป (ไม่แตะ cap ข้ามเธรด)"""
+        with self.lock:
+            self.index, self._switch, self.ok = index, True, False
 
     def _open(self):
         cap = cv2.VideoCapture(self.index)
@@ -198,6 +205,10 @@ class Camera:
 
     def _loop(self):
         while not self._stop:
+            if self._switch:
+                self._switch = False
+                self.cap.release()
+                self.cap = self._open()
             ret, f = (self.cap.read() if self.cap.isOpened() else (False, None))
             if not ret:
                 with self.lock:
@@ -359,6 +370,18 @@ class Analyzer:
 
 
 # ─────────────────────────── setup ───────────────────────────
+def list_cameras(probe=3):
+    """ลองเปิด index 0..probe-1 คืนเฉพาะตัวที่อ่านเฟรมได้ — ช้า ~1 วิ/ตัวบน Windows ทำครั้งเดียวตอนเปิดแอป"""
+    found = []
+    for i in range(max(1, int(probe))):
+        cap = cv2.VideoCapture(i)
+        ok = cap.isOpened() and cap.read()[0]
+        cap.release()
+        if ok:
+            found.append(i)
+    return found or [0]
+
+
 def load_config():
     # encoding ระบุชัด — Windows default เป็น cp1252 อ่านคอมเมนต์ไทยใน yaml ไม่ได้
     with open(HERE / "config.yaml", encoding="utf-8") as f:
@@ -465,7 +488,10 @@ def start(cfg):
         print(f"       venv ใหม่:  py -3.12 -m venv .venv  &&  .venv\\Scripts\\activate\n")
     model = load_model(cfg)
     hands = load_hand_landmarker()
-    cam = Camera(cfg["camera_index"], mirror=cfg.get("mirror", True),
+    cams = list_cameras(cfg.get("camera_probe", 3))          # ทำรายการก่อนเปิดตัวจริง (สองตัวพร้อมกันไม่ได้)
+    idx = cfg["camera_index"] if cfg["camera_index"] in cams else cams[0]
+    print("กล้องที่เปิดได้:", cams, "→ ใช้", idx)
+    cam = Camera(idx, mirror=cfg.get("mirror", True), available=cams,
                  width=cfg.get("camera_width"), height=cfg.get("camera_height"))
 
     print("กำลังเปิดกล้อง...")
@@ -475,7 +501,7 @@ def start(cfg):
         if time.time() - t0 > 10:
             cam.release()
             raise SystemExit(
-                f"\nเปิดกล้องไม่ได้ (camera_index = {cfg['camera_index']})\n"
+                f"\nเปิดกล้องไม่ได้ (camera_index = {idx})\n"
                 "เช็กว่ากล้องเสียบอยู่ ไม่มีโปรแกรมอื่นแย่งใช้ แล้วลองเปลี่ยน "
                 "camera_index ใน config.yaml เป็น 1 หรือ 2\n"
             )

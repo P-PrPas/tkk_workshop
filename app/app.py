@@ -20,27 +20,29 @@ from overlay import splash          # vision (torch/ultralytics) นำเข้
                                     # เปิดดูหน้าตา/รัน tools/ui_preview.py บนเครื่องที่ไม่มีสแต็ก CV ได้
 
 try:
-    from PySide6.QtCore import Qt, QRectF, QTimer, QVariantAnimation, QPointF
+    from PySide6.QtCore import Qt, QPoint, QRectF, QTimer, QVariantAnimation, QPointF
     from PySide6.QtGui import (QColor, QFont, QFontMetrics, QImage, QPainter,
                                QPalette, QPen, QPixmap)
     from PySide6.QtWidgets import (QAbstractButton, QApplication, QHBoxLayout,
-                                   QVBoxLayout, QWidget)
+                                   QMenu, QVBoxLayout, QWidget)
 except ImportError:
     raise SystemExit("\nไม่มี PySide6 — ติดตั้งก่อน:  pip install -r app/requirements.txt\n")
 
 
 # ─────────────────────────── ธีม ───────────────────────────
-# ชุดสีเดียวกับที่ vision.py วาดลงเฟรม (ที่นั่นเป็น BGR ที่นี่เป็น hex)
-GROUND = "#0B0E13"   # พื้นหน้าต่าง
-PANEL  = "#10141B"   # แผงข้าง / แถบสถานะ
-CARD   = "#171D27"   # แถวเช็กลิสต์
-LINE   = "#242C39"   # เส้นแบ่ง 1px
-TXT    = "#E7ECF3"   # อักษรหลัก
-DIM    = "#8B96A8"   # อักษรรอง
-FAINT  = "#7A8496"   # ป้ายกำกับตัวเล็ก (คอนทราสต์ยังผ่าน 4.5:1 บนพื้น PANEL)
-SIGNAL = "#3DD68C"   # ตรวจแล้ว / กำลังหยิบ
-AMBER  = "#F2B34B"   # ยังไม่ตรวจ / กล้องหลุด
-BLACK  = "#05070A"   # พื้นหลังกรอบภาพ
+# ห้องเดโมปิดไฟ ฉายโปรเจกเตอร์ — พื้นยิ่งเข้ม ตัวอักษรยิ่งสว่าง อ่านจากท้ายห้องได้
+# สองสีสัญญาณ (SIGNAL/AMBER) ล็อกไว้ ต้องตรงกับ vision.py (ที่นั่นเป็น BGR) — แก้ต้องแก้คู่กัน
+GROUND = "#080B10"   # พื้นหน้าต่าง
+PANEL  = "#0E121A"   # แผงข้าง / แถบสถานะ
+CARD   = "#1B2330"   # แถวเช็กลิสต์ (สว่างกว่าแผงชัด ๆ ให้แถวลอยออกมา)
+LINE   = "#303B4C"   # เส้นแบ่ง 1px / ขอบ
+TXT    = "#F4F7FC"   # อักษรหลัก
+HEAD   = "#C7D0DE"   # ป้ายหัวข้อของแต่ละแผง — สว่างพออ่านข้ามห้อง
+DIM    = "#A7B3C6"   # อักษรรอง
+FAINT  = "#8C99AE"   # ป้ายกำกับจาง (timestamp, hint) — ยังผ่าน 4.5:1 บนพื้น PANEL
+SIGNAL = "#3DD68C"   # ตรวจแล้ว / กำลังหยิบ            (ล็อก — ตรงกับ overlay.OK)
+AMBER  = "#F2B34B"   # ยังไม่ตรวจ / กล้องหลุด          (ล็อก — ตรงกับ overlay.WARN)
+BLACK  = "#04060A"   # พื้นหลังกรอบภาพ
 
 # Inter ไม่มี glyph ไทย — ไล่ family ให้ Qt เลือกรายตัวอักษร (ไทยตกไปที่ Segoe UI / Noto)
 UI_FAMILIES = ["Inter", "Segoe UI", "Helvetica Neue", "Noto Sans Thai", "Tahoma", "sans-serif"]
@@ -81,6 +83,14 @@ def ground(w, color):
     w.setPalette(pal)
 
 
+def section(p, x, y, s):
+    """ป้ายหัวข้อแผง — ขีดตั้งสั้นนำหน้า (ภาษาเดียวกับขีดสถานะในแถว) + ตัวอักษรสว่าง ใหญ่กว่าเดิม"""
+    p.setPen(Qt.PenStyle.NoPen)
+    p.setBrush(QColor(HEAD))
+    p.drawRoundedRect(QRectF(x, y + 3, 3, 12), 1.5, 1.5)
+    text(p, x + 12, y, s, face(12, QFont.Weight.Bold, track=1.0), HEAD)
+
+
 # ─────────────────────────── ปุ่ม ───────────────────────────
 class Button(QAbstractButton):
     """ปุ่มวาดเอง — มุมมน antialias + ไล่สีตอน hover ใน 160ms (QSS ของ Qt ทำ transition ไม่ได้)
@@ -98,6 +108,10 @@ class Button(QAbstractButton):
 
     def _set_glow(self, v):
         self._glow = v
+        self.update()
+
+    def set_label(self, s):
+        self.label = s
         self.update()
 
     def _to(self, target):
@@ -134,10 +148,11 @@ class Button(QAbstractButton):
             p.setPen(pen(SIGNAL, 1.6))
             p.drawRoundedRect(r.adjusted(-1.5, -1.5, 1.5, 1.5), 10.5, 10.5)
 
-        f = face(13 if self.primary else 12, QFont.Weight.DemiBold if self.primary else QFont.Weight.Medium)
+        wide = self.primary or self.width() > 240   # ปุ่มเต็มแถว (primary + "เลือกกล้อง") ใหญ่กว่าปุ่มในแถบสามช่อง
+        f = face(14 if wide else 12, QFont.Weight.Bold if self.primary else QFont.Weight.DemiBold)
         p.setFont(f)
         p.setPen(pen(ink))
-        pad = 14 if self.primary else 10
+        pad = 14 if self.primary else 11
         p.drawText(r.adjusted(pad, 0, -pad, 0),
                    int(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter)
                    if self.primary else int(Qt.AlignmentFlag.AlignCenter), self.label)
@@ -216,21 +231,21 @@ class Viewport(QWidget):
         p.drawEllipse(QPointF(x + 4, y + 6), 8, 8)
         p.setBrush(col)
         p.drawEllipse(QPointF(x + 4, y + 6), 3.5, 3.5)
-        text(p, x + 18, y - 1, "LIVE" if live else "RECONNECTING",
-             face(11, QFont.Weight.Bold, track=1.4, caps=True), col.name())
+        text(p, x + 18, y - 2, "LIVE" if live else "RECONNECTING",
+             face(12, QFont.Weight.Bold, track=1.6, caps=True), col.name())
 
     def _chip(self, p, x, y, s):
-        f = face(11, QFont.Weight.DemiBold, mono=True)
-        w = QFontMetrics(f).horizontalAdvance(s) + 20
+        f = face(12, QFont.Weight.DemiBold, mono=True)
+        w = QFontMetrics(f).horizontalAdvance(s) + 22
         p.setPen(Qt.PenStyle.NoPen)
-        p.setBrush(QColor(8, 11, 16, 190))
-        p.drawRoundedRect(QRectF(x, y, w, 26), 6, 6)
-        p.setPen(pen(QColor(255, 255, 255, 28)))
+        p.setBrush(QColor(6, 9, 14, 205))
+        p.drawRoundedRect(QRectF(x, y, w, 28), 6, 6)
+        p.setPen(pen(QColor(255, 255, 255, 40)))
         p.setBrush(Qt.BrushStyle.NoBrush)
-        p.drawRoundedRect(QRectF(x + 0.5, y + 0.5, w - 1, 25), 6, 6)
+        p.drawRoundedRect(QRectF(x + 0.5, y + 0.5, w - 1, 27), 6, 6)
         p.setFont(f)
-        p.setPen(pen(DIM))
-        p.drawText(QRectF(x, y, w, 26), int(Qt.AlignmentFlag.AlignCenter), s)
+        p.setPen(pen(TXT))
+        p.drawText(QRectF(x, y, w, 28), int(Qt.AlignmentFlag.AlignCenter), s)
         return w
 
 
@@ -267,7 +282,7 @@ class Rack(QWidget):
         inner = W - pad * 2
         done = sum(1 for r in self.rows if r[1])
 
-        text(p, pad, 26, "รอบตรวจปัจจุบัน", face(11, QFont.Weight.DemiBold, track=1.2), FAINT)
+        section(p, pad, 26, "รอบตรวจปัจจุบัน")
 
         # ── ตัวเลขพระเอก: อ่านจากท้ายห้องได้ ──
         big = face(54, QFont.Weight.Bold, mono=True)
@@ -276,10 +291,10 @@ class Rack(QWidget):
         p.drawText(QRectF(pad, 46, inner, 64), int(Qt.AlignmentFlag.AlignLeft), f"{done:02d}")
         wd = QFontMetrics(big).horizontalAdvance(f"{done:02d}")
         p.setFont(face(30, QFont.Weight.Normal, mono=True))
-        p.setPen(pen(QColor(255, 255, 255, 60)))
+        p.setPen(pen(QColor(255, 255, 255, 110)))
         p.drawText(QRectF(pad + wd + 10, 68, inner, 46), int(Qt.AlignmentFlag.AlignLeft),
                    f"/ {len(self.rows):02d}")
-        text(p, pad, 114, "ชิ้นงานที่ตรวจแล้ว", face(12), DIM)
+        text(p, pad, 114, "ชิ้นงานที่ตรวจแล้ว", face(13), DIM)
 
         # ── มิเตอร์แบบช่อง: หนึ่งช่องต่อหนึ่งชิ้น ──
         y = 142
@@ -289,19 +304,19 @@ class Rack(QWidget):
             for i, (_, ok, prog, _) in enumerate(self.rows):
                 x = pad + i * (seg + gap)
                 p.setPen(Qt.PenStyle.NoPen)
-                p.setBrush(QColor(SIGNAL) if ok else QColor(255, 255, 255, 22))
+                p.setBrush(QColor(SIGNAL) if ok else QColor(255, 255, 255, 36))
                 p.drawRoundedRect(QRectF(x, y, seg, 7), 2, 2)
                 if not ok and prog > 0:                    # ช่องกำลังไต่
                     p.setBrush(QColor(AMBER))
                     p.drawRoundedRect(QRectF(x, y, max(3.0, seg * prog), 7), 2, 2)
         else:
             p.setPen(Qt.PenStyle.NoPen)
-            p.setBrush(QColor(255, 255, 255, 16))
+            p.setBrush(QColor(255, 255, 255, 28))
             p.drawRoundedRect(QRectF(pad, y, inner, 7), 2, 2)
 
         p.setPen(pen(LINE))
         p.drawLine(pad, y + 30, W - pad, y + 30)
-        text(p, pad, y + 44, "รายการชิ้นงาน", face(11, QFont.Weight.DemiBold, track=1.2), FAINT)
+        section(p, pad, y + 44, "รายการชิ้นงาน")
 
         # ── แถวชิ้นงาน — จำนวนแถวที่โชว์คิดจากที่ว่างจริง ไม่ใช่ค่าคงที่ ──
         # (จอเล็ก/จอโปรเจกเตอร์สูงไม่เท่ากัน ตัวเลขตายตัวจะไปทับบันทึกเหตุการณ์)
@@ -329,7 +344,7 @@ class Rack(QWidget):
         # ── บันทึกเหตุการณ์ — ยึดขอบล่างของแผง ใหม่สุดอยู่บน ──
         p.setPen(pen(LINE))
         p.drawLine(pad, base - 14, W - pad, base - 14)
-        text(p, pad, base, "บันทึกเหตุการณ์", face(11, QFont.Weight.DemiBold, track=1.2), FAINT)
+        section(p, pad, base, "บันทึกเหตุการณ์")
         for i in range(log_n):
             ly = base + 22 + i * 22
             if i < len(self.log):
@@ -350,10 +365,10 @@ class Rack(QWidget):
         p.setBrush(col)                             # ขีดสถานะซ้าย — เขียว=ตรวจแล้ว อำพัน=ยังไม่ตรวจ
         p.drawRoundedRect(QRectF(x + 5, y + 11, 3, ROW_H - 22), 1.5, 1.5)
 
-        text(p, x + 18, y + 13, f"#{tid:02d}", face(16, QFont.Weight.Bold, mono=True),
+        text(p, x + 18, y + 12, f"#{tid:02d}", face(18, QFont.Weight.Bold, mono=True),
              col.name() if ok else TXT)
-        text(p, x + 72, y + 16, "ตรวจแล้ว" if ok else "ยังไม่ตรวจ", face(12),
-             SIGNAL if ok else DIM)
+        text(p, x + 76, y + 15, "ตรวจแล้ว" if ok else "ยังไม่ตรวจ",
+             face(13, QFont.Weight.DemiBold), col.name())
         if ok:
             text(p, x, y + 17, f"{held_s:5.0f}s", face(11, mono=True), FAINT,
                  Qt.AlignmentFlag.AlignRight, w - 14)
@@ -386,10 +401,13 @@ class Station(QWidget):
 
         new_round = Button("เริ่มรอบตรวจใหม่", "R", primary=True)
         new_round.clicked.connect(self.reset)
+        self.cam_btn = Button("เลือกกล้อง", "C")
+        self.cam_btn.clicked.connect(self.pick_camera)
         keys = QVBoxLayout()
         keys.setContentsMargins(22, 0, 22, 20)
         keys.setSpacing(8)
         keys.addWidget(new_round)
+        keys.addWidget(self.cam_btn)
         strip = QHBoxLayout()
         strip.setSpacing(8)
         for label, hint, fn in (("บันทึกภาพ", "S", self.shot), ("เต็มจอ", "F", self.fullscreen),
@@ -424,11 +442,47 @@ class Station(QWidget):
         self.timer = QTimer(self)
         self.timer.timeout.connect(self.tick)
         self.timer.start(20)
+        self._sync_cam_btn()
 
     # ── ปุ่ม ──
     def reset(self):
         self.an.reset()
         self.flash("เริ่มรอบตรวจใหม่แล้ว")
+
+    # ── เลือกกล้อง — vision.start() สำรวจ index ที่เปิดได้ไว้ใน cam.available ตอนเปิดแอป ──
+    def _cam(self):
+        return getattr(self.an, "cam", None)          # ui_preview ไม่มี cam จริง
+
+    def _sync_cam_btn(self):
+        cam = self._cam()
+        self.cam_btn.set_label(f"กล้อง {cam.index}" if cam else "กล้อง —")
+
+    def pick_camera(self):
+        cam = self._cam()
+        if not cam:
+            return
+        m = QMenu(self)                               # popup แยกชั้น — QSS ไม่ไหลลงหน้าต่างหลัก
+        m.setStyleSheet(
+            f"QMenu{{background:{PANEL};color:{TXT};border:1px solid {LINE};padding:6px}}"
+            f"QMenu::item{{padding:8px 26px 8px 16px;border-radius:6px}}"
+            f"QMenu::item:selected{{background:{CARD}}}")
+        for i in cam.available:
+            act = m.addAction(f"กล้อง {i}" + ("   ●" if i == cam.index else ""))
+            act.triggered.connect(lambda _=False, n=i: self.set_camera(n))
+        m.exec(self.cam_btn.mapToGlobal(QPoint(0, 0)))   # Qt เลื่อนขึ้นเองถ้าชนขอบล่างจอ
+
+    def set_camera(self, i):
+        cam = self._cam()
+        if cam and i != cam.index:
+            cam.switch(i)
+            self.flash(f"สลับไปกล้อง {i}")
+        self._sync_cam_btn()
+
+    def cycle_camera(self):
+        cam = self._cam()
+        if cam and len(cam.available) > 1:
+            j = cam.available.index(cam.index) if cam.index in cam.available else -1
+            self.set_camera(cam.available[(j + 1) % len(cam.available)])
 
     def shot(self):
         if self.view.raw is not None:
@@ -454,6 +508,8 @@ class Station(QWidget):
             self.shot()
         elif k == Qt.Key.Key_F:
             self.fullscreen()
+        elif k == Qt.Key.Key_C:
+            self.cycle_camera()
         elif k == Qt.Key.Key_D:
             self.an.debug = not self.an.debug
             self.flash(f"debug {'เปิด' if self.an.debug else 'ปิด'}")
@@ -498,7 +554,7 @@ class Header(QWidget):
     def __init__(self):
         super().__init__()
         self.st, self.clock = {}, ""
-        self.setFixedHeight(52)
+        self.setFixedHeight(58)
 
     def set(self, st):
         now = time.strftime("%H:%M:%S")
@@ -515,21 +571,21 @@ class Header(QWidget):
 
         p.setPen(Qt.PenStyle.NoPen)                    # เครื่องหมาย: สี่เหลี่ยมตะแคง
         p.setBrush(QColor(SIGNAL))
-        p.translate(30, 26)
+        p.translate(32, 29)
         p.rotate(45)
-        p.drawRoundedRect(QRectF(-6, -6, 12, 12), 2, 2)
+        p.drawRoundedRect(QRectF(-7, -7, 14, 14), 2, 2)
         p.resetTransform()
 
-        text(p, 48, 11, "INSPECTION STATION",
-             face(13, QFont.Weight.Bold, track=2.2, caps=True), TXT)
-        text(p, 48, 30, "เช็กลิสต์ผู้ตรวจ · operator หยิบชิ้นงานไหนออกมาตรวจแล้วบ้าง",
-             face(11), FAINT)
+        text(p, 52, 11, "INSPECTION STATION",
+             face(15, QFont.Weight.Bold, track=2.6, caps=True), TXT)
+        text(p, 52, 33, "เช็กลิสต์ผู้ตรวจ · operator หยิบชิ้นงานไหนออกมาตรวจแล้วบ้าง",
+             face(12), DIM)
 
         r = int(self.st.get("round_s", 0))
-        text(p, 0, 11, self.clock, face(14, QFont.Weight.Medium, mono=True),
-             DIM, Qt.AlignmentFlag.AlignRight, self.width() - 26)
-        text(p, 0, 31, f"รอบนี้ {r // 60:02d}:{r % 60:02d}", face(11, mono=True), FAINT,
-             Qt.AlignmentFlag.AlignRight, self.width() - 26)
+        text(p, 0, 10, self.clock, face(17, QFont.Weight.DemiBold, mono=True),
+             TXT, Qt.AlignmentFlag.AlignRight, self.width() - 28)
+        text(p, 0, 34, f"รอบนี้ {r // 60:02d}:{r % 60:02d}", face(12, mono=True), DIM,
+             Qt.AlignmentFlag.AlignRight, self.width() - 28)
 
 
 class Footer(QWidget):
@@ -538,7 +594,7 @@ class Footer(QWidget):
     def __init__(self):
         super().__init__()
         self.line = ("", DIM, "")
-        self.setFixedHeight(40)
+        self.setFixedHeight(44)
 
     def set(self, st, msg, events):
         note, expire = msg
@@ -566,11 +622,11 @@ class Footer(QWidget):
         state, col, last = self.line
         p.setPen(Qt.PenStyle.NoPen)
         p.setBrush(QColor(col))
-        p.drawEllipse(QPointF(26, 20), 4, 4)
-        text(p, 40, 12, state, face(12, QFont.Weight.Medium), col)
+        p.drawEllipse(QPointF(28, 22), 5, 5)
+        text(p, 44, 13, state, face(13, QFont.Weight.DemiBold), col)
         if last:
-            text(p, 0, 13, last, face(11, mono=True), FAINT,
-                 Qt.AlignmentFlag.AlignRight, self.width() - 26)
+            text(p, 0, 14, last, face(12, mono=True), FAINT,
+                 Qt.AlignmentFlag.AlignRight, self.width() - 28)
 
 
 # ─────────────────────────── main ───────────────────────────

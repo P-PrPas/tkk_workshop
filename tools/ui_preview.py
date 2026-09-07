@@ -71,9 +71,18 @@ STATES = {
 }
 
 
+class FakeCam:
+    """พอให้ปุ่ม "เลือกกล้อง" มีอะไรให้โชว์ในภาพพรีวิว — ไม่เปิดกล้องจริง"""
+    index, available = 0, [0, 1]
+
+    def switch(self, i):
+        self.index = i
+
+
 class FakeAnalyzer:
     def __init__(self, frame, insp, state):
         self.frame, self.insp, self.debug = frame, insp, False
+        self.cam = FakeCam()
         self.rows, self.camera = STATES[state](insp.rows())
         self.events = deque([(time.strftime("%H:%M:%S"), f"ตรวจแล้ว · ชิ้น #{t}")
                              for t, ok, *_ in self.rows if ok][:3])

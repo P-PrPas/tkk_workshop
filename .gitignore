@@ -8,3 +8,4 @@ app/models/
 app/shot_*.png
 .venv-train/
 datasets/_coco_cache/
+*.docx

@@ -105,7 +105,7 @@ The rule is identical to the notebook. Everything below is the “make it real�
 | 2 | **ByteTrack IDs + `CupMemory`** | A cup hidden by the gripping hand keeps its identity and position for ~1 s |
 | 3 | **`HoldState` hysteresis** (3 up / 6 down) | The `HOLDING` label stops flickering at the boundary |
 | 4 | **`Inspection` checklist** | A hand brushing past a cup no longer ticks it off — a leaky counter demands ~1 s of real holding. Ticks persist; `R` starts a new round |
-| 5 | **Real error handling** | Camera unplugged → reconnects itself; missing model/camera → a helpful message, not a traceback |
+| 5 | **Real error handling + camera picker** | Camera unplugged → reconnects itself; a `C` / **กล้อง** menu switches between the cameras found at startup; missing model/camera → a helpful message, not a traceback |
 | 6 | **A real GUI** (PySide6 / Qt) | The checklist is a live list and needs a reset button — both are painful drawn onto a video frame. Qt also brings HiDPI scaling for the projector, antialiased custom painting, and system fonts, so the UI can speak Thai |
 
 ---
@@ -232,6 +232,7 @@ Every button in the sidebar has a keyboard shortcut:
 | Key | Action |
 | --- | --- |
 | `R` | Start a new inspection round — clears the checklist, trails and track IDs |
+| `C` | Pick a camera — menu of the indices found at startup; the key alone cycles to the next |
 | `S` | Save a still (`shot_<timestamp>.png`, camera view only) |
 | `D` | Toggle debug overlay (hand points-in-box count) |
 | `F` | Toggle fullscreen ↔ windowed |
@@ -249,7 +250,8 @@ during an event.**
 | `model_path` | `models/best.pt` | `.pt` (GPU-friendly) · `.onnx` (CPU, auto-exported) · `yolo11m.pt` (fallback) |
 | `cup_class` | `0` | `0` for the trained model · `41` for `yolo11m.pt` (COCO) |
 | `device` | _(blank)_ | Blank = auto (`cuda → mps → cpu`). Force with `cuda` / `mps` / `cpu`. |
-| `camera_index` | `0` | Try `1` or `2` if the camera doesn’t open |
+| `camera_index` | `0` | Starting camera — switch at runtime with the **กล้อง** button / `C`. Try `1` or `2` if it doesn’t open |
+| `camera_probe` | `3` | Indices `0..N-1` probed at startup to populate the camera picker |
 | `mirror` | `true` | Flip horizontally (selfie view) |
 | `window_width` | `1280` | Initial window width |
 | `camera_width` / `camera_height` | `1280` / `720` | Resolution requested from the camera — higher = crisper HUD on a projector |
