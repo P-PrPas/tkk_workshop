@@ -11,6 +11,7 @@
   5. Inspection — เช็กลิสต์ว่าชิ้นไหนถูกหยิบไปตรวจแล้ว + เส้นทางที่มันเคลื่อนที่มา
   6. จัดการ error จริง — กล้องหลุดต่อใหม่, โมเดล/กล้องหาย ขึ้นข้อความไทย
 """
+import os
 import sys
 import threading
 import time
@@ -18,6 +19,10 @@ import urllib.error
 import urllib.request
 from collections import deque
 from pathlib import Path
+
+# macOS: ปิด GPU ของ MediaPipe ก่อน import — hand_landmarker.task มีโหนด palm detector ที่
+# ไป init Metal (DrishtiMetalHelper) แล้ว abort ทั้งโปรเซส ถ้า Metal service ไม่พร้อม
+os.environ.setdefault("MEDIAPIPE_DISABLE_GPU", "1")
 
 import cv2
 import mediapipe as mp
