@@ -193,6 +193,7 @@ class HoldState:
 | ไม่เจอมือ / ไม่เจอแก้ว | สถานะปกติ ไม่ใช่ error — วาดเฟรมต่อไปเงียบๆ |
 | โหลดโมเดลไม่สำเร็จ | ลองโหลดจาก Release URL เอง; ยังไม่ได้ → บอก path + คำสั่ง `gh release download` + แผนสำรอง yolo11m |
 | Python นอก 3.11–3.13 | เตือนตอนเปิดแอป + บอกคำสั่งสร้าง venv 3.12 (mediapipe/torch ยังไม่มี wheel 3.14 ที่ครบ) |
+| macOS: MediaPipe เรียก Metal delegate แล้ว abort (`DrishtiMetalHelper` / `service_ Service is unavailable`) | `load_hand_landmarker()` ปัก `delegate=CPU` ไว้ — โมเดลมือรัน CPU ไม่ต้องแตะ GPU |
 
 ### 5. เช็กลิสต์ผู้ตรวจ (`Inspection`) — โจทย์จริงของงาน
 ```python

@@ -281,6 +281,7 @@ startup log always show what is actually running.
 | Symptom | Fix |
 | --- | --- |
 | `module 'torch' has no attribute 'save'` | You’re on Python 3.14. Make the venv with **3.12**. |
+| macOS aborts with `Check failed: service_ Service is unavailable` (`DrishtiMetalHelper`) | MediaPipe tried the Metal/GPU delegate. Fixed in `load_hand_landmarker()` by pinning `delegate=CPU` — pull latest. |
 | Exits with “เปิดกล้องไม่ได้” after 10 s | Another app is using the camera, or wrong index — try `camera_index: 1`. |
 | `ModuleNotFoundError: PySide6` | `pip install -r app/requirements.txt` (it is `PySide6-Essentials`, not full `PySide6`). |
 | Qt exits with `libGL.so.1: cannot open` (Linux) | `sudo apt install libgl1 libegl1` — Qt needs them; Windows and macOS do not. |

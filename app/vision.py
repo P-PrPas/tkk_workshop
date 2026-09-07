@@ -472,7 +472,11 @@ def load_hand_landmarker():
                     f"ดาวน์โหลดเองจาก {HAND_TASK_URL}\nแล้ววางไว้ที่ {HAND_TASK}\n"
                 )
     opts = mp_vision.HandLandmarkerOptions(
-        base_options=mp_python.BaseOptions(model_asset_path=str(HAND_TASK)),
+        # delegate=CPU บังคับไว้ — บน macOS ตัว .task (float16) จะไปเรียก GPU/Metal delegate เอง
+        # แล้ว abort ทันที: "Check failed: service_ Service is unavailable" ที่ DrishtiMetalHelper
+        # โมเดลมือจิ๋วมาก รันบน CPU (XNNPACK) ก็เร็วพอ ไม่ต้องใช้ GPU
+        base_options=mp_python.BaseOptions(model_asset_path=str(HAND_TASK),
+                                           delegate=mp_python.BaseOptions.Delegate.CPU),
         running_mode=mp_vision.RunningMode.VIDEO,
         num_hands=2,
     )
