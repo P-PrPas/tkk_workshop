@@ -156,7 +156,7 @@ def main():
     n_val = len(list((OUT / "images" / "val").glob("*.jpg")))
     print(f"\nเสร็จ — {OUT}/  (train {n_tr} / val {n_val})")
     print("เทรนต่อ:  bash tools/train.sh")
-    print("วัดผล:   .venv-train/bin/python tools/eval.py runs/detect/cup_big/weights/best.pt")
+    print("วัดผล:   .venv-train/bin/python tools/eval.py runs/cup_big/weights/best.pt")
 
 
 if __name__ == "__main__":

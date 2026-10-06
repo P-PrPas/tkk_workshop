@@ -46,13 +46,35 @@ model.train(data="data/cup.yaml", epochs=3, imgsz=640, batch=4, seed=0, amp=Fals
 python tools/build_bigdata.py               # ดึงครบ: train 9204 (9189 COCO + 15 ในห้อง), val 390, ~1.5GB
 python tools/build_bigdata.py --max-train 2000   # จำกัดจำนวน ถ้าเน็ตช้า
 ```
-- แหล่งข้อมูล: **COCO 2017 คลาส `cup`** (แก้วมัค/กาแฟ/กระดาษ/ใส ครบ) — ไม่ใช้ Open Images
-  แล้ว เพราะ fiftyone ต้องมี mongod ที่ลงยากบางเครื่อง สคริปต์ใหม่ใช้แค่ `urllib` + `opencv`
+- แหล่งข้อมูล: **COCO 2017 คลาส `cup`** (แก้วมัค/กาแฟ/กระดาษ/ใส ครบ) — ไม่ใช้ fiftyone
+  เพราะต้องมี mongod ที่ลงยากบางเครื่อง สคริปต์ใหม่ใช้แค่ `urllib` + `opencv`
 - ดาวน์โหลด: annotations zip 241MB ครั้งเดียว + รูปจาก `images.cocodataset.org`
   (มี socket timeout กัน server ค้าง · ~15 รูป/วินาที → รูปครบ ~10-15 นาที)
 - output: `datasets/cup_big/{images,labels}/{train,val}/` + `dataset.yaml` (1 คลาส `cup` = 0)
 - **รวมรูปในห้องของเราเข้า train อัตโนมัติ** (ตั้งชื่อ `room_*`, remap label 41 → 0)
 - idempotent: รันซ้ำได้ ข้ามไฟล์ที่โหลดแล้ว
+
+### เสริมข้อมูลเพื่อ generalize — `tools/build_openimages_cup.py`
+รันต่อจาก `build_bigdata.py` (เติมเข้า `datasets/cup_big/` เดิม ไม่ทับ) เพื่อแก้ 2 จุดที่
+COCO cup เพียวๆ ไม่มี: **เคสมือจับ/บังแก้ว** (ใช้โชว์จริงต้องถือแก้ว ต้องแข็งแรงกับมือบัง)
+และ **false positive** จากของทรงคล้ายแก้ว (ขวด/ชาม/แจกัน)
+```bash
+python tools/build_openimages_cup.py            # ดึงครบ (รวม train bbox csv 2.1GB ครั้งเดียว)
+python tools/build_openimages_cup.py --quick     # ข้าม train csv ที่ใหญ่ ใช้แค่ val+test (~100MB)
+```
+- แหล่งข้อมูล: **Open Images V7** bbox csv (train+validation+test) ดึงตรงจาก
+  `storage.googleapis.com/openimages` ด้วย `urllib` — ไม่ใช้ fiftyone เหมือนเดิม
+  bbox เป็นสัดส่วน 0-1 อยู่แล้ว ไม่ต้องรู้ขนาดรูปแบบ COCO
+- รูปดึงจาก S3 bucket เปิดสาธารณะ (`open-images-dataset.s3.amazonaws.com/<split>/<id>.jpg`)
+  **ไม่ใช้ `OriginalURL`** ในเมทาดาทาของ Open Images เพราะลิงก์ flickr ส่วนใหญ่ตายแล้ว
+  (เช็คจริง: สุ่ม 1 ลิงก์ได้ 404 — ส่วน S3 ตอบ 200 ทุกรูปที่ลองแล้ว)
+- คลาสบวก (= class 0 ด้วยกันกับ COCO cup): `Mug`, `Coffee cup`, `Wine glass` — **กว้างกว่า COCO
+  เดิม** (รวม wine glass) เพราะโจทย์คือ "แก้วอะไรก็ได้" ถ้าไม่ต้องการ ตัด WINE_GLASS
+  ออกจาก `POS_MIDS` ในสคริปต์
+- คลาสลบ (ภาพพื้นหลังไม่มี box เลย ใช้ลด false positive): `Bottle`, `Bowl`, `Vase`, `Cocktail`
+- **กันรูป "มือบัง" ส่วนหนึ่งไว้แยกที่ `datasets/hand_eval/` ไม่ให้หลุดไปเทรน** (ดีฟอลต์ 25 รูป
+  ปรับด้วย `--eval-n`) — ก่อนหน้านี้ไม่มี log ว่าโมเดลพังกรณีไหนบ้าง รอบนี้เลยต้องมี eval set
+  วัดเฉพาะเคสนี้ตั้งแต่แรก ไม่ใช่เดาด้วยตา — `tools/eval.py` อ่านชุดนี้อัตโนมัติถ้ามี
 
 ### env สำหรับเทรน (เตรียมไว้แล้วที่ `.venv-train/`)
 เครื่องนี้มี V100 (compute 7.0) แต่ torch ที่มากับเครื่อง (cu130) ไม่มี kernel ให้ `sm_70`
@@ -73,18 +95,35 @@ EPOCHS=10 bash tools/train.sh    # ทดลองสั้น ๆ
   (VRAM ไม่ใช่ปัญหา — V100 32GB) ถ้า RAM เหลือลอง `BATCH=24 bash tools/train.sh`
 - `amp=False` — `amp=True` บน GPU ทำให้ conf ต่ำผิดปกติ · `patience=15` ตัดจบเองถ้าไม่ดีขึ้น
 - yolo11s ไม่ใช่ m/l — ต้องรันสดบนแล็ปท็อปวิทยากรที่อาจไม่มี GPU
-- เกณฑ์ผ่าน: `.venv-train/bin/python tools/eval.py runs/detect/cup_big/weights/best.pt` แล้ว
-  **mAP50 บน COCO cup val ≥ 0.60** และที่สำคัญกว่า — **ทดสอบด้วยกล้องจริงในห้องจริง**
-  กล่องต้องนิ่ง ไม่กระพริบ
+- เกณฑ์ผ่าน: `.venv-train/bin/python tools/eval.py runs/cup_big/weights/best.pt` แล้ว
+  **mAP50 บน COCO cup val ≥ 0.60** ถ้ามี `datasets/hand_eval/` (รัน `build_openimages_cup.py`
+  ไว้ก่อน) `eval.py` จะวัด recall เคสมือบังให้ด้วยอัตโนมัติ และที่สำคัญกว่าทั้งหมด —
+  **ทดสอบด้วยกล้องจริงในห้องจริง** กล่องต้องนิ่ง ไม่กระพริบ โดยเฉพาะตอนมือจับแก้ว
 
 ### ผลจริง (เทรนแล้ว 2026-09-03)
 `yolo11s` 66 epoch (patience ตัดจาก 80) → **COCO cup val mAP50 = 0.707**, mAP50-95 = 0.528,
 P 0.74 / R 0.65 · รูปในห้องทั้ง 5 ใบ conf 0.89–0.92 ไม่มี false positive (ดู `docs/model-eval.jpg`)
 best.pt อยู่ที่ **GitHub Release `v1`**
 
+### ผลรอบ 2 (เทรนแล้ว 2026-10-05) — เพิ่ม Open Images
+`yolo11s` 80 epoch บน COCO cup + Open Images (train ~35k รูป รวม negative) · weights อยู่ที่ `runs/cup_big3/`
+วัดด้วย `tools/eval.py` บน val เดียวกัน (COCO val2017 390 รูปล้วน) เทียบกับ v1:
+
+| | v1 (baseline) | รอบ 2 |
+|---|---|---|
+| COCO val mAP50 | 0.707 | 0.710 |
+| มือบังแก้ว (`hand_eval`) mAP50 | 0.354 | **0.895** |
+| รูปในห้อง 5 ใบ | ติดทุกใบ | ติดทุกใบ (มีกล่องหลอก conf 0.28 หนึ่งจุด) |
+
+- ของเดิมไม่เสีย แต่เคสมือบังดีขึ้นมาก — `hand_eval` มีแค่ 25 รูป ตัวเลขแกว่งได้
+- ⚠️ `build_openimages_cup.py` รุ่นแรกส่ง OI `test` split เข้า `val` ทำให้ "COCO mAP50" ปนเปื้อน
+  (baseline วัดได้ 0.387 ผิดจริง) แก้แล้วให้ OI เข้า train เท่านั้น — confusion matrix ใน
+  `runs/cup_big3/` สร้างตอนเทรนด้วย val ที่ปนเปื้อน อย่าใช้อ้างอิง
+- path ของ weights คือ `runs/cup_big*/weights/best.pt` (ไม่มี `detect/`)
+
 ### ส่งมอบ
 ```bash
-gh release create v1 runs/detect/cup_big/weights/best.pt --title "cup detector v1" \
+gh release create v1 runs/cup_big/weights/best.pt --title "cup detector v1" \
   --notes "yolo11s / COCO cup + 15 room imgs / mAP50 0.707"
 ```
 แอป (`app/app.py`) โหลด best.pt จาก Release URL อัตโนมัติถ้าไม่มีใน `app/models/` — ไม่เก็บใน git
