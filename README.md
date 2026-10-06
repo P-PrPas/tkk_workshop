@@ -301,7 +301,7 @@ The good model is trained separately (it needs a real GPU). See
 ```bash
 python tools/build_bigdata.py          # assemble COCO cup + in-room images → datasets/cup_big/
 bash   tools/train.sh                   # train YOLO11s (uses .venv-train, torch cu124)
-python tools/eval.py runs/detect/cup_big/weights/best.pt   # mAP + visual sanity grid
+python tools/eval.py runs/cup_big/weights/best.pt   # mAP + visual sanity grid
 ```
 
 Other tools: `tools/diag.py` (print every HOLDING signal per frame),

@@ -29,4 +29,4 @@ DEVICE=${DEVICE:-0}
   patience=15 amp=False seed=0 cache=False project=runs name=cup_big
 
 echo
-echo "เสร็จ — วัดผล:  $VENV/bin/python tools/eval.py runs/detect/cup_big/weights/best.pt"
+echo "เสร็จ — วัดผล:  $VENV/bin/python tools/eval.py runs/cup_big/weights/best.pt"
