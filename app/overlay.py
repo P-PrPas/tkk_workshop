@@ -25,6 +25,11 @@ OK    = (140, 214, 61)    # ตรวจแล้ว               #3DD68C   = a
 WARN  = (75, 179, 242)    # ยังไม่ตรวจ             #F2B34B   = app.AMBER
 DONE, TODO = OK, WARN
 
+# --- โหมด zone (ย้ายแก้ว A → B): เพิ่มสีเดียวคือม่วง = "อยู่ที่ A" · ที่เหลือใช้สีสัญญาณเดิม (ตรงกับ app.py) ---
+READY = (250, 139, 167)   # อยู่ที่ A              #A78BFA   = app.VIOLET
+ZONE_COLOR = {"idle": MUTED, "at_a": READY, "transit": WARN, "done": OK}
+ZONE_LABEL = {"idle": "IDLE", "at_a": "AT A", "transit": "IN TRANSIT", "done": "DONE"}
+
 # --- โครงมือเป็นคนละแกนสี (น้ำเงิน = เย็น) จะได้ไม่ปนกับ bbox · สว่างขึ้นเมื่อมือกำเข้า ---
 HAND_OPEN = (192, 168, 146)   # แบ    #92A8C0  น้ำเงินหม่น เกือบเทา
 HAND_MID  = (232, 165, 107)   # กลาง  #6BA5E8
@@ -125,18 +130,20 @@ def _fill_progress(frame, box, progress):
     cv2.addWeighted(tint, 0.25, roi, 0.75, 0, roi)
 
 
-def draw(frame, cups, hands, held_ids, insp, debug, confidences=None):
+def draw(frame, cups, hands, held_ids, insp, debug, confidences=None, zone=None):
     """วาดลงบนภาพเฉพาะสิ่งที่ต้องอยู่ *ตรงตำแหน่ง* — เส้นทาง กล่องแก้ว โครงมือ
     สถานะ/FPS/เช็กลิสต์เป็นวิดเจ็ตของ GUI ไม่ต้องเขียนทับภาพ (และพิมพ์ไทยได้)
-    u = สเกลตามความสูงเฟรม ทำให้เส้น/ตัวหนังสือหนาเท่ากันทุกความละเอียด"""
+    u = สเกลตามความสูงเฟรม ทำให้เส้น/ตัวหนังสือหนาเท่ากันทุกความละเอียด
+    zone = {tid: state} → โหมด zone: สีกรอบตามสถานะ (ไม่มีแถบเติม/เส้นทาง/ติ๊ก) ·
+    polygon A/B วาดที่ GUI ไม่ใช่ที่นี่"""
     u = frame.shape[0] / 720.0
     px = lambda v: max(1, int(v * u))
     T = []
     cups = list(cups)
-    progress = {tid: value for tid, _, value, _ in insp.rows()}
+    progress = {} if zone is not None else {tid: value for tid, _, value, _ in insp.rows()}
     # เติมก่อนวาดเส้น/ป้ายทั้งหมด เพื่อให้กรอบที่ซ้อนกันและตัวอักษรยังคมชัด
     for tid, box, coasting in cups:
-        if not coasting:
+        if not coasting and zone is None:
             _fill_progress(frame, box, 1.0 if tid in insp.picked else progress.get(tid, 0.0))
 
     # ── แก้ว: เส้นทางที่เคลื่อนมา + กรอบมุมเหลี่ยม + ป้าย id (ติ๊กถูกถ้าตรวจแล้ว) ──
@@ -144,9 +151,10 @@ def draw(frame, cups, hands, held_ids, insp, debug, confidences=None):
     for tid, box, coasting in cups:
         if coasting:
             continue
-        done = tid in insp.picked
-        col = DONE if done else TODO
-        trail = insp.trails.get(tid)
+        state = None if zone is None else zone.get(tid, "idle")
+        done = state == "done" if zone is not None else tid in insp.picked
+        col = ZONE_COLOR[state] if zone is not None else (DONE if done else TODO)
+        trail = None if zone is not None else insp.trails.get(tid)
         if trail and len(trail) > 1:
             path = [np.array(trail, np.int32)]
             cv2.polylines(frame, path, False, HALO, px(5), cv2.LINE_AA)
@@ -163,7 +171,7 @@ def draw(frame, cups, hands, held_ids, insp, debug, confidences=None):
                 _line(frame, (cx, cy), (cx, cy + sy * L), col, t, halo)
         score = (confidences or {}).get(tid)
         label = f"#{tid}" + (f"  conf {score:.2f}" if score is not None else "")
-        label += "  ✓" if done else ""
+        label += f"  {ZONE_LABEL[state]}" if zone is not None else ("  ✓" if done else "")
         label_width = font(15 * u, True).getlength(label) + 2 * max(4, int(7 * u))
         label_x = max(0, min(x1, int(frame.shape[1] - label_width)))
         _chip(frame, T, label_x, max(0, y1 - px(32)), label, col, u)
