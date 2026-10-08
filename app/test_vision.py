@@ -8,6 +8,7 @@ from types import SimpleNamespace
 from unittest.mock import patch
 
 from ultralytics.engine.results import Boxes
+from zone import AT_A, DONE, IDLE, TRANSIT, ZoneTracker, point_in_polygon, polygons_overlap
 from vision import CupMemory, CupTracker, HoldState, Inspection, hand_on_cup, hand_state, match_hand_to_cup
 
 
@@ -228,7 +229,148 @@ def test_tracker_low_confidence_and_live_threshold():
         assert len(tracks) == 1 and tracks[0][0] == first
 
 
+
+# ─────────── โหมด zone ───────────
+ZA = [(0.0, 0.0), (0.3, 0.0), (0.3, 1.0), (0.0, 1.0)]       # ซ้าย
+ZB = [(0.7, 0.0), (1.0, 0.0), (1.0, 1.0), (0.7, 1.0)]       # ขวา
+SIZE = (100, 100)
+
+
+def zbox(cx, cy=50, s=10):
+    return [cx - s, cy - s, cx + s, cy + s]
+
+
+def zstep(z, t, cups, held=()):
+    """cups = {tid: cx} · คืนสถานะของแก้วทุกใบเป็น dict"""
+    ev = z.update([(tid, zbox(cx)) for tid, cx in cups.items()], set(held), SIZE, t)
+    return ev, dict(z.rows())
+
+
+def test_zone_geometry():
+    assert point_in_polygon(10, 50, [(x * 100, y * 100) for x, y in ZA])
+    assert not point_in_polygon(50, 50, [(x * 100, y * 100) for x, y in ZA])
+    assert not polygons_overlap(ZA, ZB)
+    assert polygons_overlap(ZA, [(0.2, 0.2), (0.6, 0.2), (0.6, 0.8), (0.2, 0.8)])
+
+
+def test_zone_idle_until_in_a_and_not_ready():
+    z = ZoneTracker()
+    assert zstep(z, 0, {1: 10})[1] == {1: IDLE}               # ยังไม่ได้วาด zone
+    z.set_zones(ZA, ZB)
+    assert zstep(z, 1, {1: 50})[1] == {1: IDLE}               # อยู่กลางโต๊ะ ไม่อยู่ zone ไหน
+    assert zstep(z, 2, {1: 85})[1] == {1: IDLE}               # เริ่มที่ B ไม่นับ
+    assert zstep(z, 3, {1: 50, 2: 10})[1] == {1: IDLE, 2: AT_A}
+
+
+def test_zone_full_path_with_hand():
+    z = ZoneTracker(hold_frames=3)
+    z.set_zones(ZA, ZB)
+    zstep(z, 0, {1: 10})
+    for t in (1, 2):                                          # จับยังไม่ครบ 3 เฟรม
+        assert zstep(z, t, {1: 10}, held={1})[1] == {1: AT_A}
+    assert zstep(z, 3, {1: 10}, held={1})[1] == {1: TRANSIT}
+    for t, x in enumerate((30, 50, 60), 4):                   # คงสีข้ามพื้นที่นอก zone
+        assert zstep(z, t, {1: x}, held={1})[1] == {1: TRANSIT}
+    ev, st = zstep(z, 8, {1: 85})
+    assert st == {1: DONE} and ev == ["#1 ถึง B แล้ว"]
+    assert zstep(z, 9, {1: 50})[1] == {1: DONE}               # สำเร็จแล้วคงอยู่
+    assert z.counts() == (1, 1)
+    z.reset()
+    assert z.rows() == [] and z.ready                          # reset ล้างสถานะ คง zone
+
+
+def test_zone_brush_past_does_not_trigger():
+    z = ZoneTracker(hold_frames=3)
+    z.set_zones(ZA, ZB)
+    zstep(z, 0, {1: 10})
+    for t, held in enumerate(({1}, {1}, set(), {1}, {1}), 1):  # จับไม่ติดกัน 3 เฟรม
+        st = zstep(z, t, {1: 10}, held=held)[1]
+    assert st == {1: AT_A}
+
+
+def test_zone_leave_without_hand_is_safety_net():
+    z = ZoneTracker(settle_frames=4)
+    z.set_zones(ZA, ZB)
+    zstep(z, 0, {1: 10})
+    for t in range(1, 4):                                     # ออกจาก A ไม่ถึง 4 เฟรมติดกัน
+        assert zstep(z, t, {1: 50})[1] == {1: AT_A}
+    assert zstep(z, 4, {1: 50})[1] == {1: TRANSIT}            # ไม่มีมือเลยก็ถือว่าถูกย้าย
+    assert zstep(z, 5, {1: 85})[1] == {1: DONE}
+
+
+def test_zone_transit_persists_when_released_and_returns_to_a():
+    z = ZoneTracker(hold_frames=1, settle_frames=3)
+    z.set_zones(ZA, ZB)
+    zstep(z, 0, {1: 10})
+    zstep(z, 1, {1: 10}, held={1})                            # → TRANSIT (ยังไม่ทันออกจาก A)
+    assert zstep(z, 2, {1: 10}, held={1})[1] == {1: TRANSIT}  # มือยังถืออยู่ใน A ไม่ตกกลับ
+    assert zstep(z, 3, {1: 50})[1] == {1: TRANSIT}            # วางทิ้งกลางทาง คงสี
+    assert zstep(z, 4, {1: 50})[1] == {1: TRANSIT}
+    for t in (5, 6):                                          # วางคืน A แต่ยังไม่นิ่งพอ
+        assert zstep(z, t, {1: 10})[1] == {1: TRANSIT}
+    assert zstep(z, 7, {1: 10})[1] == {1: AT_A}
+
+
+def test_zone_id_handoff():
+    z = ZoneTracker(hold_frames=1, handoff_seconds=3.0)
+    z.set_zones(ZA, ZB)
+    zstep(z, 0, {1: 10})
+    zstep(z, 1, {1: 10}, held={1})
+    zstep(z, 2, {1: 45}, held={1})                            # TRANSIT, ถูกมือบังจน id 1 หาย
+    ev, st = zstep(z, 3, {5: 48})                              # id 5 โผล่ใกล้ตำแหน่งสุดท้าย
+    assert st == {5: TRANSIT} and ev == ["#5 รับสถานะต่อจาก #1"]
+    assert zstep(z, 4, {5: 85})[1] == {5: DONE}
+
+
+def test_zone_handoff_limits():
+    z = ZoneTracker(hold_frames=1, handoff_seconds=3.0, handoff_dist=1.5)
+    z.set_zones(ZA, ZB)
+    zstep(z, 0, {1: 10})
+    zstep(z, 1, {1: 10}, held={1})
+    assert zstep(z, 2, {9: 90})[1][9] == IDLE                  # ไกลเกิน ไม่รับต่อ (id 1 ยังรอ id ใหม่อยู่)
+    z2 = ZoneTracker(hold_frames=1, handoff_seconds=3.0)
+    z2.set_zones(ZA, ZB)
+    zstep(z2, 0, {1: 10})
+    zstep(z2, 1, {1: 10}, held={1})
+    assert zstep(z2, 6, {5: 12})[1] == {5: AT_A}              # เกินเวลา 3 วิ ไม่รับต่อ (และ id 1 ถูกลืม)
+    z3 = ZoneTracker(hold_frames=1)
+    z3.set_zones(ZA, ZB)
+    zstep(z3, 0, {1: 10, 2: 25})
+    zstep(z3, 1, {1: 10, 2: 25}, held={1, 2})
+    st = zstep(z3, 2, {7: 24})[1]                              # สองใบหาย → ใบใหม่รับต่อจากใบที่ใกล้กว่า
+    assert st[7] == TRANSIT and 2 not in st and 1 in st
+
+
+def test_zone_multiple_cups_independent_and_counts():
+    z = ZoneTracker(hold_frames=1)
+    z.set_zones(ZA, ZB)
+    zstep(z, 0, {1: 10, 2: 20, 3: 50})
+    zstep(z, 1, {1: 10, 2: 20, 3: 50}, held={1})
+    zstep(z, 2, {1: 85, 2: 20, 3: 50})
+    assert dict(z.rows()) == {1: DONE, 2: AT_A, 3: IDLE}
+    assert z.counts() == (1, 2)                                # IDLE ไม่นับในตัวหาร
+
+
+def test_zone_redraw_resets_states():
+    z = ZoneTracker(hold_frames=1)
+    z.set_zones(ZA, ZB)
+    zstep(z, 0, {1: 10})
+    z.set_zones(ZA, None)                                      # วาดใหม่ระหว่างทาง
+    assert not z.ready and z.rows() == []
+    assert zstep(z, 1, {1: 10})[1] == {1: IDLE}
+
+
 if __name__ == "__main__":
+    test_zone_geometry()
+    test_zone_idle_until_in_a_and_not_ready()
+    test_zone_full_path_with_hand()
+    test_zone_brush_past_does_not_trigger()
+    test_zone_leave_without_hand_is_safety_net()
+    test_zone_transit_persists_when_released_and_returns_to_a()
+    test_zone_id_handoff()
+    test_zone_handoff_limits()
+    test_zone_multiple_cups_independent_and_counts()
+    test_zone_redraw_resets_states()
     test_hand_matching_uses_valid_candidates()
     test_inspection_grace()
     test_tracker_low_confidence_and_live_threshold()
