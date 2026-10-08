@@ -108,13 +108,36 @@ def _chip(frame, T, x, y, s, col, u):
     _put(T, x + pad, y + pad, s, ft, col)
 
 
-def draw(frame, cups, hands, held_ids, insp, debug):
+def _fill_progress(frame, box, progress):
+    """เติมเขียวโปร่งแสงจากล่างขึ้นบน ตามสัดส่วนเวลาตรวจสะสมจริง"""
+    progress = max(0.0, min(1.0, progress))
+    if progress <= 0:
+        return
+    x1, y1, x2, y2 = map(int, box)
+    fill_top = y2 - int(round((y2 - y1) * progress))
+    h, w = frame.shape[:2]
+    left, right = max(0, x1), min(w, x2)
+    top, bottom = max(0, fill_top), min(h, y2)
+    if right <= left or bottom <= top:
+        return
+    roi = frame[top:bottom, left:right]
+    tint = np.full_like(roi, OK)
+    cv2.addWeighted(tint, 0.25, roi, 0.75, 0, roi)
+
+
+def draw(frame, cups, hands, held_ids, insp, debug, confidences=None):
     """วาดลงบนภาพเฉพาะสิ่งที่ต้องอยู่ *ตรงตำแหน่ง* — เส้นทาง กล่องแก้ว โครงมือ
     สถานะ/FPS/เช็กลิสต์เป็นวิดเจ็ตของ GUI ไม่ต้องเขียนทับภาพ (และพิมพ์ไทยได้)
     u = สเกลตามความสูงเฟรม ทำให้เส้น/ตัวหนังสือหนาเท่ากันทุกความละเอียด"""
     u = frame.shape[0] / 720.0
     px = lambda v: max(1, int(v * u))
     T = []
+    cups = list(cups)
+    progress = {tid: value for tid, _, value, _ in insp.rows()}
+    # เติมก่อนวาดเส้น/ป้ายทั้งหมด เพื่อให้กรอบที่ซ้อนกันและตัวอักษรยังคมชัด
+    for tid, box, coasting in cups:
+        if not coasting:
+            _fill_progress(frame, box, 1.0 if tid in insp.picked else progress.get(tid, 0.0))
 
     # ── แก้ว: เส้นทางที่เคลื่อนมา + กรอบมุมเหลี่ยม + ป้าย id (ติ๊กถูกถ้าตรวจแล้ว) ──
     # กล่อง coasting (จาก CupMemory) ไม่วาด — กติกายังใช้เช็กอยู่เบื้องหลัง แค่ไม่โชว์บนจอ
@@ -138,7 +161,12 @@ def draw(frame, cups, hands, held_ids, insp, debug):
             for cy, sy in ((y1, 1), (y2, -1)):                              # วงเล็บมุมหนา — ตัวเน้น
                 _line(frame, (cx, cy), (cx + sx * L, cy), col, t, halo)
                 _line(frame, (cx, cy), (cx, cy + sy * L), col, t, halo)
-        _chip(frame, T, x1, y1 - px(32), f"#{tid}" + ("  ✓" if done else ""), col, u)
+        score = (confidences or {}).get(tid)
+        label = f"#{tid}" + (f"  conf {score:.2f}" if score is not None else "")
+        label += "  ✓" if done else ""
+        label_width = font(15 * u, True).getlength(label) + 2 * max(4, int(7 * u))
+        label_x = max(0, min(x1, int(frame.shape[1] - label_width)))
+        _chip(frame, T, label_x, max(0, y1 - px(32)), label, col, u)
 
     # ── โครงมือ: สีตามท่า (พาร์ท 2) · เขียวเมื่อจับแก้ว ──
     for pts, on_cup, state, pts_in in hands:

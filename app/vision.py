@@ -19,6 +19,7 @@ import urllib.error
 import urllib.request
 from collections import deque
 from pathlib import Path
+from types import SimpleNamespace
 
 # macOS: ปิด GPU ของ MediaPipe ก่อน import — hand_landmarker.task มีโหนด palm detector ที่
 # ไป init Metal (DrishtiMetalHelper) แล้ว abort ทั้งโปรเซส ถ้า Metal service ไม่พร้อม
@@ -31,6 +32,7 @@ import yaml
 from mediapipe.tasks import python as mp_python
 from mediapipe.tasks.python import vision as mp_vision
 from ultralytics import YOLO
+from ultralytics.trackers.byte_tracker import BYTETracker
 
 from overlay import draw, splash
 
@@ -43,6 +45,11 @@ RELEASE = "https://github.com/P-PrPas/tkk_workshop/releases/download/v1"   # bes
 
 TIPS = [4, 8, 12, 16, 20]     # ปลายนิ้วทั้งห้า
 PIPS = [2, 6, 10, 14, 18]     # ข้อกลางของแต่ละนิ้ว
+HAND_CONF_DEFAULTS = {
+    "min_hand_detection_confidence": 0.3,
+    "min_hand_presence_confidence": 0.5,
+    "min_tracking_confidence": 0.5,
+}
 
 
 # ─────────────────────────── กติกาถือแก้ว ───────────────────────────
@@ -63,19 +70,63 @@ def hand_on_cup(lm, w, h, cup_boxes, min_pts, max_ratio=3.0, margin=0.0):
     """มือ "จับ" แก้วไหม — ไม่ดูว่ากำหรือแบ (แก้วไม่มีหูต้องจับตรง ๆ มือดูเหมือนแบ)
     ดูจาก: มือกับแก้วขนาดใกล้เคียงกัน (ไม่ใช่มือชี้จากไกล) และจุด landmark >= min_pts
     จุดตกอยู่ในกล่องแก้ว (ขยายขอบ margin เท่าตัวแก้ว — แก้วมีหูจับที่หู มือจะอยู่ *ข้าง* กล่อง)"""
+    tid, _ = match_hand_to_cup(lm, w, h, list(enumerate(cup_boxes)),
+                               min_pts, max_ratio, margin)
+    return tid is not None
+
+
+def match_hand_to_cup(lm, w, h, id_boxes, min_pts, max_ratio=3.0, margin=0.0):
+    """เลือกเฉพาะแก้วที่ผ่านเกณฑ์เดียวกันทั้งหมด; คะแนนเสมอกันจริง ๆ ไม่เดา ID"""
     hx = [p.x * w for p in lm]
     hy = [p.y * h for p in lm]
     ha = (max(hx) - min(hx)) * (max(hy) - min(hy))
-    for x1, y1, x2, y2 in cup_boxes:
+    candidates = []
+    for tid, (x1, y1, x2, y2) in id_boxes:
         cw, ch = x2 - x1, y2 - y1
         ca = cw * ch
         if ca <= 0 or not (1 / max_ratio <= ha / ca <= max_ratio):
             continue                        # มือใหญ่/เล็กกว่าแก้วมาก = คนละระยะ ไม่ได้จับ
         mx, my = margin * cw, margin * ch
-        if sum(x1 - mx <= x <= x2 + mx and y1 - my <= y <= y2 + my
-               for x, y in zip(hx, hy)) >= min_pts:
-            return True
-    return False
+        expanded = sum(x1 - mx <= x <= x2 + mx and y1 - my <= y <= y2 + my
+                       for x, y in zip(hx, hy))
+        if expanded < min_pts:
+            continue
+        inside = sum(x1 <= x <= x2 and y1 <= y <= y2 for x, y in zip(hx, hy))
+        distance = ((sum(hx) / len(hx) - (x1 + x2) / 2) / cw) ** 2 + (
+                    (sum(hy) / len(hy) - (y1 + y2) / 2) / ch) ** 2
+        candidates.append(((expanded, inside, -distance), tid))
+    candidates.sort(key=lambda item: item[0], reverse=True)
+    if not candidates or (len(candidates) > 1 and candidates[0][0] == candidates[1][0]):
+        return None, 0
+    score, tid = candidates[0]
+    return tid, score[0]
+
+
+class CupTracker:
+    """ByteTrack: คะแนนต่ำต่อ ID เดิมได้ แต่เริ่ม ID ใหม่ต้องผ่าน conf ของผู้ใช้"""
+
+    def __init__(self, cfg):
+        self.low_conf = float(cfg.get("track_low_conf", 0.1))
+        self.tracker = BYTETracker(SimpleNamespace(
+            track_high_thresh=cfg["conf"], new_track_thresh=cfg["conf"],
+            track_low_thresh=self.low_conf, track_buffer=int(cfg.get("track_buffer", 30)),
+            # แยกคะแนนเป็นเกณฑ์รับ detection แล้วจับคู่ด้วยตำแหน่ง/การเคลื่อนที่
+            # ไม่คูณคะแนนซ้ำจนกรอบเดิมจับคู่ไม่ได้เมื่อผู้ใช้ตั้ง conf ต่ำมาก
+            match_thresh=0.8, fuse_score=False), frame_rate=30)
+
+    def detection_conf(self, cup_conf):
+        return min(self.low_conf, cup_conf)
+
+    def update(self, boxes, cup_conf):
+        args = self.tracker.args
+        args.track_high_thresh = args.new_track_thresh = cup_conf
+        args.track_low_thresh = self.detection_conf(cup_conf)
+        tracks = self.tracker.update(boxes.cpu().numpy())
+        # ByteTrack axis-aligned output: x1, y1, x2, y2, id, score, class, detection index
+        return [(int(row[4]), row[:4].tolist(), float(row[5])) for row in tracks]
+
+    def reset(self):
+        self.tracker.reset()
 
 
 class HoldState:
@@ -130,38 +181,68 @@ class CupMemory:
 class Inspection:
     """เช็กลิสต์รอบตรวจ — ชิ้นไหนถูกหยิบออกมาตรวจแล้ว + เส้นทางที่มันเคลื่อนที่มา
 
-    ต้องถูกจับสะสมครบ `need` เฟรมจึงติ๊กถูก (มือเฉียดผ่านไม่นับ) หลุดไปเฟรมเดียว
-    ถอยแค่หนึ่ง ไม่ล้างทิ้ง — ตัวนับแบบรั่ว ทนเฟรมที่ pose วืบหายเหมือน HoldState
+    ต้องถูกจับสะสมครบ `seconds` วินาทีจึงติ๊กถูก (มือเฉียดผ่านไม่นับ)
+    มือหลุด: พัก progress ในช่วง grace_seconds ก่อนลดเวลาสะสม ไม่เติมช่วงที่มองไม่เห็น
+    ถ้าไม่ส่ง seconds จะใช้ `need` เฟรมเพื่อรองรับตัวเรียกแบบเดิม
     ติ๊กแล้วติ๊กเลย วางคืนก็ยังตรวจแล้ว จนกว่าจะกด reset เริ่มรอบใหม่"""
 
-    def __init__(self, need, trail_len, forget_seconds):
+    def __init__(self, need, trail_len, forget_seconds, seconds=None, grace_seconds=0.4):
         self.need, self.trail_len, self.forget = need, trail_len, forget_seconds
+        self.seconds = seconds
+        self.grace_seconds = grace_seconds
         self.reset()
+
+    def set_duration(self, seconds):
+        if seconds != self.seconds:
+            self.seconds = seconds
+            self.hits.clear()
+            self.pause()
+
+    def pause(self):
+        """ไม่สะสมช่วงที่กล้องขาดหรือไม่มีผลวิเคราะห์"""
+        self._last_tick = None
+        self._held_before = set()
+        self._last_held = {}
 
     def reset(self):
         self.trails = {}      # tid -> deque จุดกึ่งกลางกล่อง
-        self.hits = {}        # tid -> เฟรมสะสมที่มือจับอยู่
+        self.hits = {}        # tid -> เวลาสะสม (หรือเฟรมสำหรับตัวเรียกแบบเดิม)
         self.picked = {}      # tid -> เวลาที่นับว่าตรวจแล้ว
         self.seen = {}        # tid -> เวลาที่เห็นล่าสุด
         self.started = time.time()
+        self.pause()
 
     def update(self, id_boxes, held_ids):
         now = time.time()
+        tick = time.monotonic()
+        elapsed = 0 if self._last_tick is None else max(0, tick - self._last_tick)
+        self._last_tick = tick
+        target = self.need if self.seconds is None else self.seconds
         for tid, (x1, y1, x2, y2) in id_boxes:
             self.seen[tid] = now
             self.trails.setdefault(tid, deque(maxlen=self.trail_len)).append(
                 (int((x1 + x2) / 2), int((y1 + y2) / 2)))
         for tid in set(self.hits) | set(held_ids):
-            self.hits[tid] = max(0, min(self.need, self.hits.get(tid, 0)
-                                        + (1 if tid in held_ids else -1)))
-            if self.hits[tid] >= self.need:
+            if self.seconds is None:
+                delta = 1 if tid in held_ids else -1
+            elif tid in held_ids and tid in self._held_before:
+                delta = elapsed
+            else:
+                deadline = self._last_held.get(tid, tick) + self.grace_seconds
+                delta = -min(elapsed, max(0, tick - deadline))
+            self.hits[tid] = max(0, min(target, self.hits.get(tid, 0) + delta))
+            if self.hits[tid] >= target:
                 self.picked.setdefault(tid, now)
+        self._held_before = set(held_ids)
+        for tid in held_ids:
+            self._last_held[tid] = tick
         # ลืม id ที่หายไปนานและไม่เคยถูกหยิบ — tracker แจก id ใหม่เรื่อย ๆ เช็กลิสต์จะรก
         for tid, last in list(self.seen.items()):
             if now - last > self.forget and tid not in self.picked:
                 del self.seen[tid]
                 self.trails.pop(tid, None)
                 self.hits.pop(tid, None)
+                self._last_held.pop(tid, None)
 
     def rows(self):
         """[(tid, ตรวจแล้ว?, ความคืบหน้า 0..1, ตรวจไปกี่วินาทีแล้ว)] เรียงตามเลข
@@ -173,7 +254,8 @@ class Inspection:
         for tid in set(self.seen) | set(self.picked):
             done = tid in self.picked
             out.append((tid, done,
-                        1.0 if done else min(1.0, self.hits.get(tid, 0) / max(self.need, 1)),
+                        1.0 if done else min(1.0, self.hits.get(tid, 0) /
+                                            (self.need if self.seconds is None else self.seconds)),
                         int(now - self.picked[tid]) if done else 0))
         return sorted(out)
 
@@ -243,12 +325,15 @@ class Analyzer:
 
     def __init__(self, cam, model, hands, cfg):
         self.cam, self.model, self.hands, self.cfg = cam, model, hands, cfg
+        self._hand_conf = {k: float(cfg.get(k, v)) for k, v in HAND_CONF_DEFAULTS.items()}
         self.device = pick_device(cfg)          # auto: cuda → mps → cpu (onnx บังคับ cpu)
         self.device_label = self.device.upper() + (" · ONNX" if str(cfg["model_path"]).endswith(".onnx") else "")
         self.hold = HoldState(cfg["hold_frames"], cfg["release_frames"])
         self.cups = CupMemory(cfg.get("cup_memory_frames", 15))
+        self.tracker = CupTracker(cfg)
         self.insp = Inspection(cfg.get("pick_frames", 8), cfg.get("trail_length", 60),
-                               cfg.get("forget_seconds", 4.0))
+                               cfg.get("forget_seconds", 4.0), seconds=cfg.get("pick_seconds", 1.0),
+                               grace_seconds=cfg.get("hand_grace_seconds", 0.4))
         self.lock = threading.Lock()
         self.frame = None            # เฟรมที่วาดผลแล้ว พร้อมแสดง
         self.seq = 0                 # เลขเฟรม — GUI ใช้เช็กว่ามีของใหม่ค่อยแปลงภาพ
@@ -266,17 +351,58 @@ class Analyzer:
         """เริ่มรอบตรวจใหม่ — ขอไว้ก่อน เธรดวิเคราะห์จะทำให้ตอนต้นเฟรมถัดไป"""
         self._reset = True
 
+    def set_cup_conf(self, value):
+        """ปรับเกณฑ์ cup ระหว่างรัน — ใช้กับเฟรมถัดไป ไม่เขียนทับ config.yaml"""
+        value = float(value)
+        if not 0.01 <= value <= 1.0:
+            raise ValueError("cup confidence must be between 0.01 and 1.00")
+        with self.lock:
+            self.cfg["conf"] = value
+
+    def set_pick_seconds(self, value):
+        value = float(value)
+        if not 0.1 <= value <= 30.0:
+            raise ValueError("inspection duration must be between 0.1 and 30 seconds")
+        with self.lock:
+            self.cfg["pick_seconds"] = value
+
+    def set_hand_confidences(self, values):
+        if set(values) != set(HAND_CONF_DEFAULTS):
+            raise ValueError("Expected all three MediaPipe confidence values")
+        values = {k: float(v) for k, v in values.items()}
+        if any(not 0.0 <= v <= 1.0 for v in values.values()):
+            raise ValueError("MediaPipe confidence must be between 0 and 1")
+        with self.lock:
+            self.cfg.update(values)
+
+    def _sync_hand_confidences(self):
+        # MediaPipe options are fixed at creation; replace only in the analysis thread.
+        with self.lock:
+            requested = {k: float(self.cfg.get(k, v)) for k, v in HAND_CONF_DEFAULTS.items()}
+        if requested == self._hand_conf:
+            return
+        try:
+            replacement = load_hand_landmarker(requested)
+        except Exception:
+            with self.lock:
+                for k, value in requested.items():
+                    if self.cfg.get(k) == value:
+                        self.cfg[k] = self._hand_conf[k]
+            self.log("ปรับ MediaPipe ไม่สำเร็จ · ใช้ค่าเดิม")
+            return
+        previous, self.hands = self.hands, replacement
+        self._hand_conf = requested
+        self.insp.pause()  # Do not count model loading time as holding time.
+        previous.close()
+        self.log("ปรับ MediaPipe แล้ว · " + "/".join(f"{v:.2f}" for v in requested.values()))
+
     def _do_reset(self):
         self.insp.reset()
         self.cups = CupMemory(self.cfg.get("cup_memory_frames", 15))
         self.hold = HoldState(self.cfg["hold_frames"], self.cfg["release_frames"])
         self._picked_seen.clear()
         self.events.clear()
-        try:                        # ให้ ByteTrack เริ่มนับ id ใหม่จาก 1 ด้วย
-            for t in self.model.predictor.trackers:
-                t.reset()
-        except Exception:
-            pass                    # ยังไม่เคย track สักเฟรม / ultralytics เปลี่ยน API — ไม่ใช่เรื่องคอขาดบาดตาย
+        self.tracker.reset()
 
     def log(self, text):
         self.events.append((time.strftime("%H:%M:%S"), text))
@@ -286,12 +412,14 @@ class Analyzer:
         prev = time.time()
         while not self._stop:
             try:
+                self._sync_hand_confidences()
                 if self._reset:
                     self._reset = False
                     self._do_reset()
                     self.log("รอบตรวจใหม่")
                 ok, frame = self.cam.read()
                 if not ok or frame is None:
+                    self.insp.pause()
                     with self.lock:
                         self.frame, self.seq = splash("reconnecting camera"), self.seq + 1
                         self.status = dict(self.status, camera=False)
@@ -299,17 +427,21 @@ class Analyzer:
                     continue
                 h, w = frame.shape[:2]
 
-                r = self.model.track(frame, persist=True, tracker="bytetrack.yaml",
-                                     imgsz=c.get("imgsz", 480), conf=c["conf"],
+                with self.lock:
+                    cup_conf = c["conf"]
+                    pick_seconds = c.get("pick_seconds", 1.0)
+                self.insp.set_duration(pick_seconds)
+                r = self.model.predict(frame,
+                                     imgsz=c.get("imgsz", 480), conf=self.tracker.detection_conf(cup_conf),
                                      device=self.device, classes=[c["cup_class"]],
                                      verbose=False)[0]
                 dets = []
-                if r.boxes is not None and r.boxes.id is not None:
-                    for box, tid in zip(r.boxes.xyxy.tolist(), r.boxes.id.tolist()):
-                        dets.append((int(tid), box))
+                confidences = {}
+                for tid, box, score in self.tracker.update(r.boxes, cup_conf):
+                    dets.append((tid, box))
+                    confidences[tid] = score
                 self.cups.update(dets)
                 id_boxes = [(tid, box) for tid, box, _ in self.cups.boxes()]
-                cup_boxes = [box for _, box in id_boxes]
 
                 res = self.hands.detect_for_video(
                     mp.Image(image_format=mp.ImageFormat.SRGB,
@@ -318,19 +450,13 @@ class Analyzer:
                 mgn = c.get("grip_box_margin", 0.35)
                 hands_out, held_ids = [], set()
                 for lm in (res.hand_landmarks or []):
-                    on_cup = hand_on_cup(lm, w, h, cup_boxes,
+                    # กล่องจากความจำยังอยู่ในรายการ แต่ไม่ใช้ยืนยันว่ามือจับแก้วจริง
+                    tid, pts_in = match_hand_to_cup(lm, w, h, dets,
                                          c.get("grip_min_points", 10),
                                          c.get("grip_max_size_ratio", 4.0), mgn)
-                    pts_in = max((sum(x1 - mgn * (x2 - x1) <= p.x * w <= x2 + mgn * (x2 - x1)
-                                      and y1 - mgn * (y2 - y1) <= p.y * h <= y2 + mgn * (y2 - y1)
-                                      for p in lm)
-                                  for x1, y1, x2, y2 in cup_boxes), default=0)
-                    if on_cup:               # แก้วใบที่มือทับจุดมากสุด = ใบที่มือนี้ถืออยู่
-                        best = max(((sum(x1 <= p.x * w <= x2 and y1 <= p.y * h <= y2
-                                         for p in lm), tid)
-                                    for tid, (x1, y1, x2, y2) in id_boxes), default=(0, None))
-                        if best[1] is not None:
-                            held_ids.add(best[1])
+                    on_cup = tid is not None
+                    if on_cup:
+                        held_ids.add(tid)
                     hands_out.append(([(int(p.x * w), int(p.y * h)) for p in lm],
                                       on_cup, hand_state(lm), pts_in))
                 holding = self.hold.update(bool(held_ids))
@@ -343,7 +469,7 @@ class Analyzer:
                 fps = 0.9 * self.status["fps"] + 0.1 / max(now - prev, 1e-3)
                 prev = now
                 view = draw(frame, self.cups.boxes(), hands_out, held_ids,
-                            self.insp, self.debug)
+                            self.insp, self.debug, confidences=confidences)
                 with self.lock:
                     self.frame, self.seq = view, self.seq + 1
                     self.status = {
@@ -354,6 +480,7 @@ class Analyzer:
                         "round_s": now - self.insp.started,
                     }
             except Exception as e:
+                self.insp.pause()
                 if self._stop:
                     break               # กำลังปิดโปรแกรม — เงียบไว้
                 print("analyzer:", e)
@@ -363,7 +490,9 @@ class Analyzer:
         """(เลขเฟรม, เฟรม, สถานะ) — GUI เทียบเลขเฟรมก่อน ไม่ต้องแปลงภาพเดิมซ้ำ"""
         with self.lock:
             frame = None if self.frame is None else self.frame.copy()
-            return self.seq, frame, dict(self.status)
+            return self.seq, frame, dict(self.status, hand_conf={
+                k: self.cfg.get(k, v) for k, v in HAND_CONF_DEFAULTS.items()
+            })
 
     def release(self):
         self._stop = True
@@ -463,7 +592,8 @@ def load_model(cfg):
     return YOLO(str(p))
 
 
-def load_hand_landmarker():
+def load_hand_landmarker(cfg=None):
+    cfg = cfg or {}
     if not HAND_TASK.exists():
         if HAND_TASK_MIRROR.exists():
             HAND_TASK.write_bytes(HAND_TASK_MIRROR.read_bytes())
@@ -484,6 +614,7 @@ def load_hand_landmarker():
                                            delegate=mp_python.BaseOptions.Delegate.CPU),
         running_mode=mp_vision.RunningMode.VIDEO,
         num_hands=2,
+        **{k: float(cfg.get(k, v)) for k, v in HAND_CONF_DEFAULTS.items()},
     )
     return mp_vision.HandLandmarker.create_from_options(opts)
 
@@ -496,7 +627,7 @@ def start(cfg):
         print(f"เตือน: Python {v} ยังไม่ทดสอบ — สแต็กนี้ใช้ 3.12/3.13 (mediapipe/torch อาจพัง)")
         print(f"       venv ใหม่:  py -3.12 -m venv .venv  &&  .venv\\Scripts\\activate\n")
     model = load_model(cfg)
-    hands = load_hand_landmarker()
+    hands = load_hand_landmarker(cfg)
     cams = list_cameras(cfg.get("camera_probe", 3))          # ทำรายการก่อนเปิดตัวจริง (สองตัวพร้อมกันไม่ได้)
     idx = cfg["camera_index"] if cfg["camera_index"] in cams else cams[0]
     print("กล้องที่เปิดได้:", cams, "→ ใช้", idx)

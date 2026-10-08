@@ -58,7 +58,8 @@ def fake_frame():
                               for a in np.linspace(-2.6, 0.6, 20)]
     hands = [(pts, True, "MID", 14)]
     cups = [(tid, box, False) for tid, box in CUPS]
-    return overlay.draw(frame, cups, hands, HELD, insp, False), insp
+    return overlay.draw(frame, cups, hands, HELD, insp, False,
+                        confidences={1: 0.94, 2: 0.88, 3: 0.76, 4: 0.91}), insp
 
 
 # สถานะที่ต้องดูตอนแก้ดีไซน์ — ว่างเปล่า / ครบทุกชิ้น / ของเยอะเกินรายการ / กล้องหลุด
@@ -95,6 +96,15 @@ class FakeAnalyzer:
 
     def reset(self):
         pass
+
+    def set_cup_conf(self, value):
+        self.cup_conf = value
+
+    def set_pick_seconds(self, value):
+        self.pick_seconds = value
+
+    def set_hand_confidences(self, values):
+        self.hand_confidences = values
 
 
 def main():

@@ -3,9 +3,12 @@
 รัน:  python app/test_vision.py
 """
 import time
+import numpy as np
 from types import SimpleNamespace
+from unittest.mock import patch
 
-from vision import CupMemory, HoldState, Inspection, hand_on_cup, hand_state
+from ultralytics.engine.results import Boxes
+from vision import CupMemory, CupTracker, HoldState, Inspection, hand_on_cup, hand_state, match_hand_to_cup
 
 
 def ticks(ins):
@@ -117,7 +120,119 @@ def test_inspection_forgets_untouched():
     assert ticks(ins) == [(2, True)]
 
 
+def test_inspection_seconds():
+    cup = [(1, [0, 0, 10, 10])]
+    for fps in (5, 30):
+        ins = Inspection(8, 5, 999, seconds=1.0)
+        for i in range(fps + 1):
+            with patch("vision.time.monotonic", return_value=i / fps):
+                ins.update(cup, {1})
+            assert (1 in ins.picked) == (i == fps)
+        ins.set_duration(2.0)
+        assert 1 in ins.picked  # Changing duration keeps completed items.
+        ins.reset()
+        assert not ins.picked
+
+    ins = Inspection(8, 5, 999, seconds=1.0, grace_seconds=0)
+    for tick, held in ((0, {1}), (0.5, {1}), (0.75, set())):
+        with patch("vision.time.monotonic", return_value=tick):
+            ins.update(cup, held)
+    assert ins.rows()[0][2] == 0.25
+    ins.pause()
+    with patch("vision.time.monotonic", return_value=100):
+        ins.update(cup, {1})
+    assert ins.rows()[0][2] == 0.25  # Disconnection adds no time.
+    ins.set_duration(0.5)
+    assert ins.rows()[0][2] == 0
+
+
+def test_hand_matching_uses_valid_candidates():
+    hand = _hand([(0.35 + 0.20 * (i % 3) / 2, 0.28 + 0.60 * (i // 3) / 6)
+                  for i in range(21)])
+    good = (1, [100, 50, 150, 160])
+    # Large distractor contains every point but fails the hand/cup size ratio.
+    bad = (99, [0, 0, 200, 200])
+    for candidates in ([good, bad], [bad, good]):
+        tid, count = match_hand_to_cup(hand, 200, 200, candidates, 12, 4.0, 0.5)
+        assert tid == 1 and count >= 12
+    assert match_hand_to_cup(hand, 200, 200, [bad], 12, 4.0, 0.5)[0] is None
+    assert match_hand_to_cup(hand, 200, 200, [good, (2, good[1])], 12, 4.0, 0.5)[0] is None
+
+
+def test_inspection_grace():
+    ins = Inspection(8, 5, 999, seconds=1.0, grace_seconds=0.4)
+    cups = [(1, [0, 0, 10, 10]), (2, [50, 50, 60, 60])]
+
+    def step(tick, held):
+        with patch("vision.time.monotonic", return_value=tick):
+            ins.update(cups, held)
+
+    step(0, {1})
+    step(0.5, {1})
+    step(0.6, set())
+    step(0.8, set())
+    assert ins.hits[1] == 0.5 and not ins.picked
+    step(0.85, {1})
+    assert ins.hits[1] == 0.5  # Reappearance does not count the invisible interval.
+    step(1.0, {1})
+    assert abs(ins.hits[1] - 0.65) < 1e-9
+    step(1.2, {2})
+    assert ins.hits[2] == 0 and ins.hits[1] == 0.65
+    step(1.5, {2})
+    assert abs(ins.hits[1] - 0.55) < 1e-9  # Only decay after the grace deadline.
+    assert abs(ins.hits[2] - 0.3) < 1e-9
+    step(2.2, set())
+    assert not ins.picked
+    ins.set_duration(2.0)
+    assert not ins.hits and not ins._last_held
+    ins.reset()
+    assert not ins._held_before
+
+
+def test_tracker_low_confidence_and_live_threshold():
+    tracker = CupTracker({"conf": 0.5, "track_low_conf": 0.1, "track_buffer": 30})
+
+    def boxes(*rows):
+        return Boxes(np.asarray(rows, dtype=np.float32).reshape(-1, 6), (400, 400))
+
+    high = [10, 10, 60, 100, 0.9, 0]
+    weak = [12, 10, 62, 100, 0.2, 0]
+    other = [200, 10, 250, 100, 0.2, 0]
+    tracks = tracker.update(boxes(high, other), 0.5)
+    assert len(tracks) == 1
+    original_id = tracks[0][0]
+    for _ in range(3):
+        tracks = tracker.update(boxes(weak, other), 0.5)
+        assert len(tracks) == 1 and tracks[0][0] == original_id
+        assert abs(tracks[0][2] - 0.2) < 1e-6
+    assert tracker.update(boxes(), 0.5) == []
+    tracks = tracker.update(boxes(high), 0.5)
+    assert tracks[0][0] == original_id  # Brief total occlusion retains identity.
+    medium = [200, 10, 250, 100, 0.6, 0]
+    for _ in range(2):
+        tracks = tracker.update(boxes(high, medium), 0.8)
+        assert len(tracks) == 1  # Raising UI conf affects new tracks immediately.
+    for _ in range(2):
+        tracks = tracker.update(boxes(high, medium), 0.5)
+    assert len(tracks) == 2
+    assert original_id in {tid for tid, _, _ in tracks}
+    assert tracker.detection_conf(0.05) == 0.05
+    tracker.reset()
+    tracks = tracker.update(boxes(high), 0.5)
+    assert len(tracks) == 1 and tracks[0][0] == 1
+    low_tracker = CupTracker({"conf": 0.01, "track_low_conf": 0.01})
+    faint = [10, 10, 60, 100, 0.02, 0]
+    first = low_tracker.update(boxes(faint), 0.01)[0][0]
+    for _ in range(3):
+        tracks = low_tracker.update(boxes(faint), 0.01)
+        assert len(tracks) == 1 and tracks[0][0] == first
+
+
 if __name__ == "__main__":
+    test_hand_matching_uses_valid_candidates()
+    test_inspection_grace()
+    test_tracker_low_confidence_and_live_threshold()
+    test_inspection_seconds()
     test_hysteresis()
     test_cup_memory()
     test_inspection()
