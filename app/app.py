@@ -23,8 +23,8 @@ try:
     from PySide6.QtCore import Qt, QPoint, QRectF, QTimer, QVariantAnimation, QPointF
     from PySide6.QtGui import (QColor, QFont, QFontMetrics, QImage, QPainter,
                                QPalette, QPen, QPixmap)
-    from PySide6.QtWidgets import (QAbstractButton, QApplication, QHBoxLayout,
-                                   QMenu, QVBoxLayout, QWidget)
+    from PySide6.QtWidgets import (QAbstractButton, QApplication, QDoubleSpinBox, QLabel, QHBoxLayout,
+                                   QMenu, QScrollArea, QVBoxLayout, QWidget)
 except ImportError:
     raise SystemExit("\nไม่มี PySide6 — ติดตั้งก่อน:  pip install -r app/requirements.txt\n")
 
@@ -324,9 +324,12 @@ class Rack(QWidget):
         top = y + 68
         want = len(self.rows) * (ROW_H + 6)
         log_n = max(2, min(LOG_ROWS, int((self.height() - top - want - 44) // 22)))
+        compact = self.height() < top + ROW_H + 6 + 26 + 14 + 34 + 44
         base = self.height() - log_n * 22 - 34           # ขอบบนของบันทึกเหตุการณ์
+        if compact:
+            base = self.height()  # จอเตี้ย: ให้ที่รายการก่อน เหตุการณ์ล่าสุดยังอยู่ใน footer
         room = base - 14 - top
-        cap = max(1, int(room // (ROW_H + 6)))
+        cap = max(0, int(room // (ROW_H + 6)))
         if not self.rows:
             text(p, pad, top + 10, "ยังไม่เห็นชิ้นงานในเฟรม", face(12), FAINT)
             text(p, pad, top + 32, "วางแก้วให้กล้องเห็น แล้วหยิบขึ้นมาตรวจ",
@@ -334,7 +337,7 @@ class Rack(QWidget):
         else:
             shown = self.rows[:cap]
             if len(shown) < len(self.rows) and cap * (ROW_H + 6) + 20 > room:
-                shown = shown[:-1] or shown       # ยอมทิ้งอีกแถวเพื่อให้ "+ อีก N ชิ้น" มีที่ยืน
+                shown = shown[:-1]               # ยอมทิ้งอีกแถวเพื่อให้ "+ อีก N ชิ้น" มีที่ยืน
             for i, (tid, ok, prog, held_s) in enumerate(shown):
                 self._row(p, pad, top + i * (ROW_H + 6), inner, tid, ok, prog, held_s)
             if len(shown) < len(self.rows):
@@ -342,6 +345,8 @@ class Rack(QWidget):
                      f"+ อีก {len(self.rows) - len(shown)} ชิ้น", face(11), FAINT)
 
         # ── บันทึกเหตุการณ์ — ยึดขอบล่างของแผง ใหม่สุดอยู่บน ──
+        if compact:
+            return
         p.setPen(pen(LINE))
         p.drawLine(pad, base - 14, W - pad, base - 14)
         section(p, pad, base, "บันทึกเหตุการณ์")
@@ -406,6 +411,81 @@ class Station(QWidget):
         keys = QVBoxLayout()
         keys.setContentsMargins(22, 0, 22, 20)
         keys.setSpacing(8)
+        conf_row = QHBoxLayout()
+        conf_label = QLabel("เกณฑ์ conf · cup")
+        conf_label.setFont(face(12, QFont.Weight.DemiBold))
+        conf_label.setStyleSheet(f"color: {HEAD}")
+        self.conf_input = QDoubleSpinBox()
+        self.conf_input.setRange(0.01, 1.00)
+        self.conf_input.setDecimals(2)
+        self.conf_input.setSingleStep(0.05)
+        self.conf_input.setValue(float(cfg.get("conf", 0.25)))
+        self.conf_input.setKeyboardTracking(False)
+        self.conf_input.setMinimumSize(100, 36)
+        self.conf_input.setFont(face(14, mono=True))
+        self.conf_input.setAccessibleName("เกณฑ์ confidence ของ class cup")
+        self.conf_input.setToolTip("เกณฑ์เริ่ม ID แก้วใหม่ · ID เดิมใช้คะแนนต่ำช่วยติดตามได้\nลดค่าเพื่อตรวจพบง่ายขึ้น · เพิ่มค่าเพื่อลดการตรวจผิด\nมีผลระหว่างรัน ไม่บันทึกลง config.yaml")
+        self.conf_input.setStyleSheet(
+            f"QDoubleSpinBox {{background:{CARD}; color:{TXT}; border:1px solid {LINE};"
+            "border-radius:6px; padding:4px 8px;}"
+            "QDoubleSpinBox::up-button, QDoubleSpinBox::down-button {width:24px;}")
+        self.conf_input.valueChanged.connect(self.set_cup_conf)
+        conf_label.setBuddy(self.conf_input)
+        conf_row.addWidget(conf_label, 1)
+        conf_row.addWidget(self.conf_input)
+        keys.addLayout(conf_row)
+        duration_row = QHBoxLayout()
+        duration_label = QLabel("เวลาถือก่อนตรวจแล้ว")
+        duration_label.setFont(face(12, QFont.Weight.DemiBold))
+        duration_label.setStyleSheet(f"color: {HEAD}")
+        self.duration_input = QDoubleSpinBox()
+        self.duration_input.setRange(0.1, 30.0)
+        self.duration_input.setDecimals(1)
+        self.duration_input.setSingleStep(0.1)
+        self.duration_input.setSuffix(" s")
+        self.duration_input.setValue(float(cfg.get("pick_seconds", 1.0)))
+        self.duration_input.setKeyboardTracking(False)
+        self.duration_input.setMinimumSize(100, 36)
+        self.duration_input.setFont(face(14, mono=True))
+        self.duration_input.setStyleSheet(self.conf_input.styleSheet())
+        self.duration_input.setAccessibleName("เวลาถือชิ้นงานก่อนนับว่าตรวจแล้ว หน่วยวินาที")
+        self.duration_input.setToolTip("เวลาถือสะสมก่อนนับว่าตรวจแล้ว (วินาที)\nเปลี่ยนค่าแล้วเริ่มสะสมใหม่ ชิ้นที่ตรวจแล้วคงเดิม\nใช้ระหว่างรัน ไม่บันทึกลง config.yaml")
+        self.duration_input.valueChanged.connect(self.set_pick_seconds)
+        duration_label.setBuddy(self.duration_input)
+        duration_row.addWidget(duration_label, 1)
+        duration_row.addWidget(self.duration_input)
+        keys.addLayout(duration_row)
+        self.hand_conf_inputs = {}
+        self.hand_conf_timer = QTimer(self)
+        self.hand_conf_timer.setSingleShot(True)
+        self.hand_conf_timer.setInterval(350)
+        self.hand_conf_timer.timeout.connect(self.set_hand_confidences)
+        for key, label, default in (
+            ("min_hand_detection_confidence", "มือ · Detection", 0.3),
+            ("min_hand_presence_confidence", "มือ · Presence", 0.5),
+            ("min_tracking_confidence", "มือ · Tracking", 0.5),
+        ):
+            row = QHBoxLayout()
+            title = QLabel(label)
+            title.setFont(face(12, QFont.Weight.DemiBold))
+            title.setStyleSheet(f"color: {HEAD}")
+            spin = QDoubleSpinBox()
+            spin.setRange(0.0, 1.0)
+            spin.setDecimals(2)
+            spin.setSingleStep(0.05)
+            spin.setValue(float(cfg.get(key, default)))
+            spin.setKeyboardTracking(False)
+            spin.setMinimumSize(100, 30)
+            spin.setFont(face(14, mono=True))
+            spin.setStyleSheet(self.conf_input.styleSheet())
+            spin.setAccessibleName(key)
+            spin.setToolTip(f"MediaPipe · {key}\nปรับระหว่างรัน ไม่บันทึกลง config.yaml")
+            spin.valueChanged.connect(lambda _: self.hand_conf_timer.start())
+            title.setBuddy(spin)
+            row.addWidget(title, 1)
+            row.addWidget(spin)
+            keys.addLayout(row)
+            self.hand_conf_inputs[key] = spin
         keys.addWidget(new_round)
         keys.addWidget(self.cam_btn)
         strip = QHBoxLayout()
@@ -425,12 +505,19 @@ class Station(QWidget):
 
         wrap = Rail()
         wrap.setLayout(side)
+        self.rack.setMinimumHeight(300)
+        rail_scroll = QScrollArea()
+        rail_scroll.setWidgetResizable(True)
+        rail_scroll.setWidget(wrap)
+        rail_scroll.setFixedWidth(366)
+        rail_scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        rail_scroll.setStyleSheet(f"QScrollArea {{border:0; background:{PANEL};}}")
 
         mid = QHBoxLayout()
         mid.setContentsMargins(0, 0, 0, 0)
         mid.setSpacing(0)
         mid.addWidget(self.view, 1)
-        mid.addWidget(wrap)
+        mid.addWidget(rail_scroll)
 
         root = QVBoxLayout(self)
         root.setContentsMargins(0, 0, 0, 0)
@@ -445,6 +532,18 @@ class Station(QWidget):
         self._sync_cam_btn()
 
     # ── ปุ่ม ──
+    def set_cup_conf(self, value):
+        self.an.set_cup_conf(value)
+        self.flash(f"เกณฑ์ conf ของ cup = {value:.2f}")
+
+    def set_hand_confidences(self):
+        self.an.set_hand_confidences({k: spin.value() for k, spin in self.hand_conf_inputs.items()})
+        self.flash("กำลังปรับค่า MediaPipe")
+
+    def set_pick_seconds(self, value):
+        self.an.set_pick_seconds(value)
+        self.flash(f"เวลาถือก่อนตรวจแล้ว = {value:.1f} วินาที · เริ่มสะสมใหม่")
+
     def reset(self):
         self.an.reset()
         self.flash("เริ่มรอบตรวจใหม่แล้ว")
@@ -517,6 +616,13 @@ class Station(QWidget):
     # ── วนแสดงผล ──
     def tick(self):
         seq, frame, st = self.an.latest()
+        if not self.hand_conf_timer.isActive():
+            for key, value in st.get("hand_conf", {}).items():
+                spin = self.hand_conf_inputs[key]
+                if not spin.hasFocus():
+                    spin.blockSignals(True)
+                    spin.setValue(value)
+                    spin.blockSignals(False)
         if frame is None:
             frame, seq = splash("starting model", int(self.cfg.get("window_width", 1280))), -2
         self.view.st = st
