@@ -21,7 +21,7 @@ tkk_workshop/            ← repo นี้
 ├── CLAUDE.md
 ├── docs/                ← 00 ภาพรวม, 01 สเปกโน้ตบุ๊ก, 02 ข้อมูล, 03 โมเดล, 04 แอป
 ├── notebooks/cv101.ipynb
-├── app/{vision.py,overlay.py,app.py,config.yaml}   ← คิด / วาดลงเฟรม / แสดงผล
+├── app/{vision.py,zone.py,overlay.py,app.py,config.yaml}   ← คิด / สถานะโหมด zone / วาดลงเฟรม / แสดงผล
 ├── tools/{build_bigdata.py,ui_preview.py}
 └── data/                ← submodule → github.com/P-PrPas/tkk_workshop-data
 ```
@@ -41,6 +41,7 @@ tkk_workshop/            ← repo นี้
    ทุกเฟรมด้วยฟอนต์สัดส่วนจะขยับซ้าย-ขวาตลอด อ่านจากท้ายห้องไม่ได้
 10. **สีที่เป็นสัญญาณมีสองสี** เขียว `#3DD68C` (ตรวจแล้ว) · อำพัน `#F2B34B` (ยังไม่ตรวจ)
     ชุดเดียวกันอยู่ทั้งใน `app.py` (hex) และ `overlay.py` (BGR) — แก้ต้องแก้คู่กัน
+    (โหมด zone เพิ่มม่วง `#A78BFA` = "อยู่ที่ A" อีกสีเดียว — `app.VIOLET` ↔ `overlay.READY`)
 
 ## ข้อเท็จจริงที่ตรวจสอบแล้ว อย่าเสียเวลาตรวจซ้ำ
 - Ultralytics **ไม่มี** hand-pose checkpoint สำเร็จรูป มีแต่ body pose 17 จุด
