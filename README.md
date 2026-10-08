@@ -256,13 +256,16 @@ during an event.**
 | `window_width` | `1280` | Initial window width |
 | `camera_width` / `camera_height` | `1280` / `720` | Resolution requested from the camera — higher = crisper HUD on a projector |
 | `imgsz` | `480` | Inference size. `384` faster, `640` slightly more accurate |
-| `conf` | `0.25` | Lower (`0.15`) if cups are missed, raise if there are false hits |
+| `conf` | `0.25` | Confidence required to start a new cup ID; adjustable in the right panel. Existing IDs can use weaker detections |
+| `track_low_conf` | `0.10` | Detection floor for continuing existing cup tracks; weak detections cannot start new IDs |
+| `track_buffer` | `30` | Analysis frames ByteTrack keeps lost IDs available for matching |
 | `cup_memory_frames` | `15` | How long a hidden cup keeps its last box |
 | `grip_min_points` | `10` | Hand landmarks (of 21) that must fall inside the cup box |
 | `grip_box_margin` | `0.35` | Cup box is expanded by this fraction before counting points |
 | `grip_max_size_ratio` | `4.0` | Max hand/cup size ratio — rejects a hand pointing from far away |
 | `hold_frames` / `release_frames` | `3` / `6` | Hysteresis: frames to latch `HOLDING` on / off (off > on = no flicker) |
-| `pick_frames` | `8` | Frames of accumulated holding before a cup is ticked as inspected (a brush-past does not count) |
+| `pick_seconds` | `1.0` | Accumulated holding time before inspection completes; adjustable in the right panel. Green fill inside each box shows progress |
+| `hand_grace_seconds` | `0.4` | Freeze progress briefly when a hand disappears, then decay it. Invisible time never adds progress |
 | `trail_length` | `60` | Points kept in each cup’s motion trail — `0` disables trails |
 | `forget_seconds` | `4` | An *uninspected* cup gone this long drops off the checklist; inspected ones stay until reset |
 
