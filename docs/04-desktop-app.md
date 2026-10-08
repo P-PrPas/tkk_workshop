@@ -17,7 +17,7 @@ app/
 ├── config.yaml       # ค่าที่ต้องปรับหน้างาน
 ├── requirements.txt  # pin เวอร์ชันให้ตรงกับโน้ตบุ๊ก
 ├── test_vision.py    # self-check ตรรกะ (hysteresis / CupMemory / hand_on_cup) — ไม่ต้องมีกล้อง
-└── models/best.pt    # โหลดจาก GitHub Release `v1` อัตโนมัติตอนรันครั้งแรก (gitignore ไว้)
+└── models/cup_v2.pt  # วางเอง (+ cup_v2.onnx สำหรับเครื่อง CPU ล้วน) — gitignore ไว้ แอปไม่โหลดจากเน็ต
 tools/
 ├── diag.py           # เปิดกล้อง พิมพ์สัญญาณทุกเฟรม — ไว้ debug ว่า HOLDING พังตรงไหน
 ├── optimize.py       # ลอง export ONNX/OpenVINO แล้ววัดว่าเร็วขึ้นบนเครื่องนี้ไหม
@@ -28,7 +28,7 @@ tools/
 git clone --recursive https://github.com/P-PrPas/tkk_workshop.git
 cd tkk_workshop
 pip install -r app/requirements.txt
-python app/app.py          # ครั้งแรกโหลด best.pt + hand_landmarker.task ให้เอง
+python app/app.py          # ครั้งแรกโหลด hand_landmarker.task ให้เอง (โมเดลตรวจแก้ววางเองใน app/models/)
 ```
 `hand_landmarker.task` ใช้จาก submodule `data/` ถ้ามี ไม่งั้นโหลดจาก MediaPipe
 
@@ -104,7 +104,7 @@ HiDPI อัตโนมัติ · `QPainter` antialias เต็มรูป�
 
 ## config.yaml
 ```yaml
-model_path: models/best.pt   # GPU → torch ใช้ CUDA เอง · CPU ล้วน → best.onnx (export ให้อัตโนมัติ)
+model_path: auto             # CUDA/MPS → models/cup_v2.pt · CPU ล้วน → models/cup_v2.onnx (ถ้ามีไฟล์)
 cup_class: 0                  # 41 ถ้า fallback ไป yolo11m.pt (COCO)
 device:                      # เว้นว่าง=auto · cuda=NVIDIA · mps=Apple Silicon · cpu=บังคับ
 camera_index: 0              # กล้องเริ่มต้น · สลับระหว่างรันได้ที่ปุ่ม "กล้อง" (คีย์ C)
@@ -141,7 +141,7 @@ forget_seconds: 4            # แก้วที่ยังไม่ถูก�
 - `device:` เว้นว่าง = **auto** (`pick_device()` ไล่ cuda → mps → cpu) ไม่ต้องตั้งเอง · ใส่ค่าเมื่ออยากบังคับ
 - ให้ auto เจอ GPU ต้องลง torch ให้ตรงเครื่องก่อน: **NVIDIA (Win/Linux)** torch cu124 (ไม่เกิน CUDA ใน
   `nvidia-smi`) · **Apple Silicon** torch จาก PyPI มี MPS มาแล้ว · **mac Intel / CPU ล้วน** ไม่มี GPU →
-  `model_path: models/best.onnx` + `pip install onnxruntime` · ลด `imgsz` 480→384 ช่วยทุกทาง
+  วาง `models/cup_v2.onnx` + `pip install onnxruntime` (`model_path: auto` เลือกให้เอง) · ลด `imgsz` 480→384 ช่วยทุกทาง
 - **ไม่มี CUDA บน macOS** — `pip install torch --index-url .../cu124` ไม่มี wheel ให้ mac (auto เลย fallback MPS/CPU)
 - ตอนเปิดแอปพิมพ์ `YOLO device: ...` บอกว่า auto เลือกอะไร — เจอ GPU แต่ยังขึ้น CPU มักเพราะลง torch ตัว `+cpu`
 
@@ -191,7 +191,7 @@ class HoldState:
 | เปิดกล้องไม่ได้ตอนเริ่ม | ข้อความไทยบอกว่าต้องทำอะไร แล้วจบโปรแกรม ไม่ใช่ traceback |
 | กล้องหลุดกลางทาง | พยายามต่อใหม่ทุก 1 วินาที แสดง "กำลังเชื่อมต่อกล้องใหม่..." บนจอ |
 | ไม่เจอมือ / ไม่เจอแก้ว | สถานะปกติ ไม่ใช่ error — วาดเฟรมต่อไปเงียบๆ |
-| โหลดโมเดลไม่สำเร็จ | ลองโหลดจาก Release URL เอง; ยังไม่ได้ → บอก path + คำสั่ง `gh release download` + แผนสำรอง yolo11m |
+| โหลดโมเดลไม่สำเร็จ | แอปไม่โหลดโมเดลจากเน็ต — วาง `cup_v2.pt` ไว้ที่ `app/models/` · ไม่มีไฟล์ → บอก path ที่ต้องวาง + แผนสำรอง yolo11m |
 | Python นอก 3.11–3.13 | เตือนตอนเปิดแอป + บอกคำสั่งสร้าง venv 3.12 (mediapipe/torch ยังไม่มี wheel 3.14 ที่ครบ) |
 | macOS: MediaPipe เรียก Metal delegate แล้ว abort (`DrishtiMetalHelper` / `service_ Service is unavailable`) | `load_hand_landmarker()` ปัก `delegate=CPU` ไว้ — โมเดลมือรัน CPU ไม่ต้องแตะ GPU |
 
@@ -278,3 +278,23 @@ def reset(self):        # GUI เรียก — แค่ยกธง
 - [ ] `python tools/ui_preview.py` ผ่าน และ `docs/app-ui.png` ตรงกับหน้าจอจริง
 - [ ] ลองบนจอโปรเจกเตอร์จริง (สเกล 150%/200%) — Qt ต้องคมทั้งตัวหนังสือและเส้น 1px
 - [ ] กด Tab ไล่ปุ่มครบทุกปุ่มแล้วเห็นวงโฟกัส · กด Space ที่ปุ่ม "เริ่มรอบตรวจใหม่" แล้วรีเซ็ตจริง
+
+---
+
+## โหมด Zone (ย้ายแก้วจาก A ไป B)
+
+กด `Z` สลับจากโหมดเช็กลิสต์ไปโหมด zone แล้ววาด polygon บนภาพสดสองอัน — **A** (จุดเริ่ม) แล้ว **B** (จุดจบ)
+คลิกซ้ายเพิ่มจุด · ดับเบิลคลิก/Enter ปิดกรอบ (≥ 3 จุด) · คลิกขวา/Backspace ย้อนจุด · Esc ล้าง · `X` วาดใหม่
+(B ห้ามซ้อน A · zone จำเฉพาะ session ไม่บันทึกลงไฟล์ เพราะที่ใหม่ = มุมกล้องใหม่)
+
+สถานะต่อแก้วหนึ่งใบ (ผูกกับ track id) — ตรรกะอยู่ใน `app/zone.py` ไม่พึ่งกล้อง/torch มีเทสต์ใน `test_vision.py`:
+
+| สถานะ | สี | เงื่อนไข |
+|---|---|---|
+| IDLE | เทา `#7A8496` | ยังไม่เคยอยู่ใน A |
+| AT A | ม่วง `#A78BFA` | จุดกึ่งกลางกล่องอยู่ใน A |
+| IN TRANSIT | อำพัน `#F2B34B` | มือจับแก้วใน A ติดกัน `hold_frames` เฟรม **หรือ** จุดกลางออกนอก A ติดกัน `zone_settle_frames` เฟรม (ตาข่ายนิรภัยตอน MediaPipe ตรวจมือพลาด) · คงอยู่แม้วางทิ้งกลางทาง · กลับเข้า A โดยไม่มีมือ `zone_settle_frames` เฟรม = กลับเป็น AT A |
+| DONE | เขียว `#3DD68C` | เข้า B ขณะ IN TRANSIT · คงอยู่จนกด `R` |
+
+track id หลุดตอนมือบัง (ได้เลขใหม่): แก้วใหม่ที่โผล่ใกล้ตำแหน่งสุดท้ายภายใน `zone_handoff_seconds` รับสถานะต่อ
+สีม่วงเป็นสีที่เพิ่มเข้ามาเฉพาะโหมดนี้ (`app.VIOLET` ↔ `overlay.READY` — แก้ต้องแก้คู่กัน)
