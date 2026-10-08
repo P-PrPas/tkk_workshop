@@ -5,6 +5,7 @@
 
     python tools/ui_preview.py                    # ฉากปกติ -> docs/app-ui.png
     python tools/ui_preview.py empty out.png      # สถานะอื่น: empty · done · many · lost
+    python tools/ui_preview.py zone out.png       # โหมด zone A → B (ครบสี่สถานะ) · draw = กำลังวาดกรอบ B
 """
 import sys
 import time
@@ -62,6 +63,20 @@ def fake_frame():
                         confidences={1: 0.94, 2: 0.88, 3: 0.76, 4: 0.91}), insp
 
 
+def fake_frame_zone():
+    """ฉากเดียวกัน แต่วาดด้วย overlay.draw โหมด zone — สถานะครบสี่แบบ"""
+    h, w = 720, 1280
+    frame = np.zeros((h, w, 3), np.uint8)
+    frame[:] = np.linspace(46, 20, h, dtype=np.uint8)[:, None, None]
+    for _, (x1, y1, x2, y2) in CUPS:
+        cv2.rectangle(frame, (x1 + 14, y1 + 20), (x2 - 14, y2), (86, 92, 100), -1)
+        cv2.ellipse(frame, ((x1 + x2) // 2, y1 + 20), ((x2 - x1) // 2 - 14, 14),
+                    0, 0, 360, (120, 128, 138), -1, cv2.LINE_AA)
+    cups = [(tid, box, False) for tid, box in CUPS]
+    return overlay.draw(frame, cups, [], {2}, FakeInspection(), False,
+                        confidences={1: 0.94, 2: 0.88, 3: 0.76, 4: 0.91}, zone=ZONE_STATES), None
+
+
 # สถานะที่ต้องดูตอนแก้ดีไซน์ — ว่างเปล่า / ครบทุกชิ้น / ของเยอะเกินรายการ / กล้องหลุด
 STATES = {
     "live":  lambda r: (r, True),
@@ -69,7 +84,12 @@ STATES = {
     "done":  lambda r: ([(t, True, 1.0, 30 + t) for t, _, _, _ in r], True),
     "many":  lambda r: ([(t, t % 3 == 0, 1.0 if t % 3 == 0 else t / 20, 12) for t in range(1, 12)], True),
     "lost":  lambda r: (r, False),
+    "zone":  lambda r: ([(1, "done"), (2, "transit"), (3, "at_a"), (4, "idle")], True),
+    "draw":  lambda r: ([(t, "idle") for t, _, _, _ in r], True),
 }
+ZONE_STATES = {1: "done", 2: "transit", 3: "at_a", 4: "idle"}
+ZONE_A = [(0.50, 0.28), (0.68, 0.28), (0.68, 0.78), (0.50, 0.78)]      # ล้อมแก้วใบที่ 3
+ZONE_B = [(0.09, 0.30), (0.30, 0.34), (0.29, 0.80), (0.10, 0.76)]      # ล้อมแก้วใบที่ 1
 
 
 class FakeCam:
@@ -84,6 +104,7 @@ class FakeAnalyzer:
     def __init__(self, frame, insp, state):
         self.frame, self.insp, self.debug = frame, insp, False
         self.cam = FakeCam()
+        self.state = state
         self.rows, self.camera = STATES[state](insp.rows())
         self.events = deque([(time.strftime("%H:%M:%S"), f"ตรวจแล้ว · ชิ้น #{t}")
                              for t, ok, *_ in self.rows if ok][:3])
@@ -92,10 +113,18 @@ class FakeAnalyzer:
         return 1, self.frame.copy(), {
             "holding": self.camera, "held_s": 3.4, "fps": 28.6, "hands": 1,
             "camera": self.camera, "device": "CUDA", "rows": self.rows, "round_s": 252,
+            "mode": "zone" if self.state in ("zone", "draw") else "inspect",
+            "zone_ready": self.state == "zone", "zone_counts": (1, 3) if self.state == "zone" else (0, 0),
         }
 
     def reset(self):
         pass
+
+    def set_mode(self, mode):
+        self.mode = mode
+
+    def set_zones(self, a, b):
+        self.zones = (a, b)
 
     def set_cup_conf(self, value):
         self.cup_conf = value
@@ -113,10 +142,18 @@ def main():
     frame, insp = fake_frame()
     if state == "lost":
         frame = overlay.splash("reconnecting camera")
+    if state in ("zone", "draw"):                        # โหมด zone: สีกรอบตามสถานะ (ไม่มีแถบเติม/เส้นทาง)
+        frame, _ = fake_frame_zone()
     qt = QApplication(sys.argv[:1])
     win = ui.Station(FakeAnalyzer(frame, insp, state), {"window_width": 1280})
     win.resize(1640, 812)
     win.show()
+    if state in ("zone", "draw"):
+        win.toggle_mode()
+        win.view.zones = {"A": ZONE_A, "B": ZONE_B if state == "zone" else None}
+        win.view.stage = "B" if state == "draw" else None
+        win.view.pts = [(0.09, 0.30), (0.30, 0.34), (0.29, 0.80)] if state == "draw" else []
+        win.view.hover = (0.10, 0.76) if state == "draw" else None
     qt.processEvents()
     win.tick()
     qt.processEvents()

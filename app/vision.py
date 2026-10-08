@@ -35,13 +35,14 @@ from ultralytics import YOLO
 from ultralytics.trackers.byte_tracker import BYTETracker
 
 from overlay import draw, splash
+from zone import ZoneTracker
 
 HERE = Path(__file__).parent
 HAND_TASK = HERE / "hand_landmarker.task"
 HAND_TASK_URL = ("https://storage.googleapis.com/mediapipe-models/hand_landmarker/"
                  "hand_landmarker/float16/1/hand_landmarker.task")
 HAND_TASK_MIRROR = HERE.parent / "data" / "hand_landmarker.task"
-RELEASE = "https://github.com/P-PrPas/tkk_workshop/releases/download/v1"   # best.pt · best.onnx (imgsz 480)
+MODEL_PT, MODEL_ONNX = "models/cup_v2.pt", "models/cup_v2.onnx"   # model_path: auto เลือกจากสองตัวนี้ (imgsz 480)
 
 TIPS = [4, 8, 12, 16, 20]     # ปลายนิ้วทั้งห้า
 PIPS = [2, 6, 10, 14, 18]     # ข้อกลางของแต่ละนิ้ว
@@ -334,11 +335,15 @@ class Analyzer:
         self.insp = Inspection(cfg.get("pick_frames", 8), cfg.get("trail_length", 60),
                                cfg.get("forget_seconds", 4.0), seconds=cfg.get("pick_seconds", 1.0),
                                grace_seconds=cfg.get("hand_grace_seconds", 0.4))
+        self.zone = ZoneTracker(cfg.get("hold_frames", 3), cfg.get("zone_settle_frames", 6),
+                                cfg.get("zone_handoff_seconds", 3.0), cfg.get("zone_handoff_dist", 1.5))
+        self.mode = "inspect"        # inspect = เช็กลิสต์ตรวจแก้ว (เดิม) · zone = ย้ายแก้ว A → B
         self.lock = threading.Lock()
         self.frame = None            # เฟรมที่วาดผลแล้ว พร้อมแสดง
         self.seq = 0                 # เลขเฟรม — GUI ใช้เช็กว่ามีของใหม่ค่อยแปลงภาพ
         self.status = {"holding": False, "held_s": 0.0, "fps": 0.0, "hands": 0,
-                       "rows": [], "device": self.device_label, "camera": True}
+                       "rows": [], "device": self.device_label, "camera": True,
+                       "mode": "inspect", "zone_ready": False, "zone_counts": (0, 0)}
         self.events = deque(maxlen=40)   # (เวลา, ข้อความ) — ป้อนแถบ ticker ล่างจอ
         self.debug = False
         self._picked_seen = set()    # ไว้ยิง event ตอนมีชิ้นใหม่ถูกติ๊ก
@@ -350,6 +355,20 @@ class Analyzer:
     def reset(self):
         """เริ่มรอบตรวจใหม่ — ขอไว้ก่อน เธรดวิเคราะห์จะทำให้ตอนต้นเฟรมถัดไป"""
         self._reset = True
+
+    def set_mode(self, mode):
+        if mode not in ("inspect", "zone"):
+            raise ValueError("mode must be 'inspect' or 'zone'")
+        with self.lock:
+            changed, self.mode = mode != self.mode, mode
+        if changed:
+            self.insp.pause()        # ไม่สะสมเวลาถือข้ามช่วงที่ไม่ได้อยู่โหมดนี้
+            self.log("โหมด Zone A → B" if mode == "zone" else "โหมดตรวจแก้ว")
+
+    def set_zones(self, a, b):
+        """a, b = polygon สัดส่วน 0-1 ของเฟรม หรือ None — เปลี่ยน zone ล้างสถานะแก้วทั้งหมด"""
+        with self.lock:
+            self.zone.set_zones(a, b)
 
     def set_cup_conf(self, value):
         """ปรับเกณฑ์ cup ระหว่างรัน — ใช้กับเฟรมถัดไป ไม่เขียนทับ config.yaml"""
@@ -403,6 +422,8 @@ class Analyzer:
         self._picked_seen.clear()
         self.events.clear()
         self.tracker.reset()
+        with self.lock:
+            self.zone.reset()            # ล้างสถานะแก้ว คง zone ที่วาดไว้
 
     def log(self, text):
         self.events.append((time.strftime("%H:%M:%S"), text))
@@ -460,24 +481,40 @@ class Analyzer:
                     hands_out.append(([(int(p.x * w), int(p.y * h)) for p in lm],
                                       on_cup, hand_state(lm), pts_in))
                 holding = self.hold.update(bool(held_ids))
-                self.insp.update(id_boxes, held_ids)
-                for tid in sorted(set(self.insp.picked) - self._picked_seen):
-                    self._picked_seen.add(tid)
-                    self.log(f"ตรวจแล้ว · ชิ้น #{tid}")
-
                 now = time.time()
+                with self.lock:
+                    zone_mode = self.mode == "zone"
+                if zone_mode:
+                    with self.lock:       # set_zones/reset มาจาก GUI — กันแก้ระหว่างที่ update อยู่
+                        events = self.zone.update(dets, held_ids, (w, h), now)
+                        zone_rows, zone_counts = self.zone.rows(), self.zone.counts()
+                        zone_ready = self.zone.ready
+                    for text in events:
+                        self.log(text)
+                    zone_view = dict(zone_rows)
+                else:
+                    self.insp.update(id_boxes, held_ids)
+                    for tid in sorted(set(self.insp.picked) - self._picked_seen):
+                        self._picked_seen.add(tid)
+                        self.log(f"ตรวจแล้ว · ชิ้น #{tid}")
+
                 fps = 0.9 * self.status["fps"] + 0.1 / max(now - prev, 1e-3)
                 prev = now
                 view = draw(frame, self.cups.boxes(), hands_out, held_ids,
-                            self.insp, self.debug, confidences=confidences)
+                            self.insp, self.debug, confidences=confidences,
+                            zone=zone_view if zone_mode else None)
                 with self.lock:
                     self.frame, self.seq = view, self.seq + 1
                     self.status = {
                         "holding": holding,
                         "held_s": now - self.hold.since if holding else 0.0,
                         "fps": fps, "hands": len(hands_out), "camera": True,
-                        "rows": self.insp.rows(), "device": self.device_label,
+                        "rows": zone_rows if zone_mode else self.insp.rows(),
+                        "device": self.device_label,
                         "round_s": now - self.insp.started,
+                        "mode": "zone" if zone_mode else "inspect",
+                        "zone_ready": zone_ready if zone_mode else self.zone.ready,
+                        "zone_counts": zone_counts if zone_mode else (0, 0),
                     }
             except Exception as e:
                 self.insp.pause()
@@ -522,19 +559,6 @@ def load_config():
         return yaml.safe_load(f)
 
 
-def _fetch(name):
-    """โหลดไฟล์โมเดลจาก GitHub Release มาไว้ที่ app/models/ ถ้ายังไม่มี"""
-    dst = HERE / "models" / name
-    if not dst.exists():
-        dst.parent.mkdir(parents=True, exist_ok=True)
-        print(f"โหลด {name} จาก GitHub Release ครั้งแรก...")
-        try:
-            urllib.request.urlretrieve(f"{RELEASE}/{name}", dst)
-        except urllib.error.URLError:
-            pass
-    return dst if dst.exists() else None
-
-
 def pick_device(cfg):
     """เลือก device เอง: config ระบุมา (cuda/mps/cpu) ใช้ตามนั้น · เว้นว่าง/auto → ไล่หาที่เร็วสุด
     onnx บังคับ cpu เสมอ (onnxruntime CUDA EP พังง่ายบนบางเครื่อง)"""
@@ -550,27 +574,27 @@ def pick_device(cfg):
     return "cpu"
 
 
+def resolve_model_path(cfg):
+    """model_path: auto → cup_v2.pt เมื่อมี CUDA/MPS (เร็วสุด) · CPU ล้วน (รวม mac Intel) ใช้ cup_v2.onnx
+    ถ้ามีไฟล์ ไม่งั้นใช้ .pt บน CPU · ระบุชื่อไฟล์เองใน config ก็ได้ ใช้ตามนั้น"""
+    if str(cfg["model_path"]).lower() != "auto":
+        return cfg["model_path"]
+    on_cpu = pick_device({**cfg, "model_path": MODEL_PT}) == "cpu"
+    return MODEL_ONNX if on_cpu and (HERE / MODEL_ONNX).exists() else MODEL_PT
+
+
 def load_model(cfg):
-    """default = best.pt (GPU ใช้ CUDA เอง) · ตั้ง model_path เป็น .onnx สำหรับ CPU (ต้องมี onnxruntime)
-    ไฟล์มาจาก Release ถ้าโหลดไม่ได้ก็ export .onnx จาก best.pt ให้เอง"""
+    """โมเดลอยู่ใน app/models/ — ไม่โหลดจากอินเทอร์เน็ต (แพ็กไปกับเครื่อง/installer)
+    .onnx ใช้กับ CPU ล้วน (ต้องมี onnxruntime)"""
     p = Path(cfg["model_path"])
     if not p.is_absolute():
         p = HERE / p
 
-    if not p.exists() and p.name in ("best.pt", "best.onnx"):
-        _fetch(p.name)
-    if not p.exists() and p.name == "best.onnx":          # Release โหลดไม่ได้ → export เอง
-        pt = _fetch("best.pt")
-        if pt:
-            print(f"export best.pt -> onnx (imgsz {cfg.get('imgsz', 480)})...")
-            out = YOLO(str(pt)).export(format="onnx", imgsz=cfg.get("imgsz", 480),
-                                       dynamic=False, verbose=False)
-            Path(out).replace(p)
-
     if not p.exists():
         raise SystemExit(
             f"\nหาไฟล์โมเดลไม่เจอ: {p}\n"
-            "โหลดเอง:  gh release download v1 -R P-PrPas/tkk_workshop -p best.pt -D app/models\n"
+            "วาง cup_v2.pt (และ cup_v2.onnx สำหรับเครื่อง CPU ล้วน) ไว้ที่ app/models/\n"
+            "ไฟล์อยู่ที่เครื่องเทรน: runs/cup_big3/weights/best.pt\n"
             "หรือใช้แผนสำรอง: model_path: yolo11m.pt  +  cup_class: 41  ใน config.yaml\n"
         )
     dev = pick_device(cfg)
@@ -585,7 +609,7 @@ def load_model(cfg):
         print("  · NVIDIA (Win/Linux): pip install --force-reinstall torch torchvision \\")
         print("        --index-url https://download.pytorch.org/whl/cu124   (torch ตอนนี้เป็นตัว +cpu?)")
         print("  · Apple Silicon: pip install torch torchvision  (PyPI มี MPS อยู่แล้ว)")
-        print("  · CPU ล้วน / mac Intel: model_path: models/best.onnx  +  pip install onnxruntime")
+        print("  · CPU ล้วน / mac Intel: วาง models/cup_v2.onnx ไว้ข้าง .pt แล้วใช้ model_path: auto  +  pip install onnxruntime")
         print("──────────────────────────────────────────────────────────────")
     else:
         print("YOLO device:", dev.upper(), "(onnx)" if p.suffix == ".onnx" else "")
@@ -626,6 +650,7 @@ def start(cfg):
         v = f"{sys.version_info.major}.{sys.version_info.minor}"
         print(f"เตือน: Python {v} ยังไม่ทดสอบ — สแต็กนี้ใช้ 3.12/3.13 (mediapipe/torch อาจพัง)")
         print(f"       venv ใหม่:  py -3.12 -m venv .venv  &&  .venv\\Scripts\\activate\n")
+    cfg["model_path"] = resolve_model_path(cfg)
     model = load_model(cfg)
     hands = load_hand_landmarker(cfg)
     cams = list_cameras(cfg.get("camera_probe", 3))          # ทำรายการก่อนเปิดตัวจริง (สองตัวพร้อมกันไม่ได้)
