@@ -1,7 +1,7 @@
 """diag — เปิดกล้อง แล้วพิมพ์ทุกอย่างที่ app ใช้ตัดสิน HOLDING ทีละเฟรม
 ไว้หาว่าปัญหาอยู่ที่ (ก) ตรวจแก้วไม่เจอ (ข) จุดมือในกล่องแก้วน้อยไป (ค) มือ/แก้วขนาดต่างกันมาก
 
-    python tools/diag.py                    # ใช้ best.pt, conf 0.10
+    python tools/diag.py                    # ใช้ app/models/cup_v2.pt, conf 0.10
     python tools/diag.py yolo11m.pt 0.15    # ลองโมเดล/conf อื่น
 
 กด q ออก
@@ -18,9 +18,9 @@ from mediapipe.tasks.python import vision as mp_vision
 from ultralytics import YOLO
 
 sys.path.insert(0, str(Path(__file__).parent.parent / "app"))
-from app import count_extended, hand_on_cup, HAND_TASK, HAND_TASK_MIRROR  # noqa
+from vision import count_extended, hand_on_cup, HAND_TASK, HAND_TASK_MIRROR  # noqa
 
-WEIGHTS = sys.argv[1] if len(sys.argv) > 1 else "app/models/best.pt"
+WEIGHTS = sys.argv[1] if len(sys.argv) > 1 else "app/models/cup_v2.pt"
 CONF = float(sys.argv[2]) if len(sys.argv) > 2 else 0.10
 
 model = YOLO(WEIGHTS)

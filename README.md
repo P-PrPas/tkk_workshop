@@ -77,7 +77,7 @@ Two object detectors, deliberately at opposite extremes. The _contrast_ is the c
 | Architecture | YOLO11n | YOLO11s |
 | Training data | ~10 in-room photos + ~23 COCO cups | COCO 2017 `cup` — 9 204 train / 390 val |
 | Epochs | 3 (~15 s on CPU) | 66 (~1–2 h on a V100) |
-| Trained | live, in the session | ahead of time → [GitHub Release `v1`](https://github.com/P-PrPas/tkk_workshop/releases) |
+| Trained | live, in the session | ahead of time → weights copied into `app/models/` by hand (not downloaded by the app) |
 | Result | finds cups in still photos, struggles live | COCO cup val **mAP50 = 0.707**; in-room cups 0.89–0.92 conf |
 
 Both fine-tune from `yolo11n.pt` / `yolo11s.pt` — checkpoints that **already know

@@ -1,8 +1,8 @@
-"""ลองแปลง best.pt เป็นฟอร์แมตอื่น แล้ววัดว่าฟอร์แมตไหนเร็วสุด "บนเครื่องนี้"
+"""ลองแปลง cup_v2.pt เป็นฟอร์แมตอื่น แล้ววัดว่าฟอร์แมตไหนเร็วสุด "บนเครื่องนี้"
 (OpenVINO/ONNX เร็วขึ้นบน CPU Intel รุ่นใหม่ แต่บางเครื่องช้าลง — ต้องวัดจริง)
 
-    python tools/optimize.py                        # best.pt, imgsz 480
-    python tools/optimize.py app/models/best.pt 384 # imgsz อื่น
+    python tools/optimize.py                        # app/models/cup_v2.pt, imgsz 480
+    python tools/optimize.py app/models/cup_v2.pt 384 # imgsz อื่น
 
 ผลบอกว่าให้ตั้ง config.yaml -> model_path เป็นอะไร
 """
@@ -14,10 +14,10 @@ import cv2
 import numpy as np
 from ultralytics import YOLO
 
-SRC = Path(sys.argv[1] if len(sys.argv) > 1 else "app/models/best.pt")
+SRC = Path(sys.argv[1] if len(sys.argv) > 1 else "app/models/cup_v2.pt")
 IMGSZ = int(sys.argv[2]) if len(sys.argv) > 2 else 480
 if not SRC.exists():
-    raise SystemExit(f"ไม่พบ {SRC} — รัน app/app.py ครั้งแรกให้มันโหลด best.pt ก่อน")
+    raise SystemExit(f"ไม่พบ {SRC} — วาง cup_v2.pt ไว้ที่ app/models/ ก่อน (แอปไม่โหลดโมเดลจากเน็ต)")
 
 img = np.random.randint(0, 255, (480, 640, 3), np.uint8)
 

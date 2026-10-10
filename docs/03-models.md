@@ -10,7 +10,7 @@
 | ข้อมูล | ~10 รูปในห้อง + ~23 รูปแก้วทั่วไป (COCO) | COCO 2017 cup: train 9204 / val 390 |
 | epoch | 3 | ~80 |
 | เวลาเทรน | ~15 วินาที (CPU) | ~1-2 ชม. (V100) |
-| เทรนเมื่อไหร่ | ในคาบ | ล่วงหน้า อยู่ใน GitHub Release |
+| เทรนเมื่อไหร่ | ในคาบ | ล่วงหน้า แล้ววางไฟล์ไว้ที่ `app/models/` |
 
 ---
 
@@ -103,7 +103,7 @@ EPOCHS=10 bash tools/train.sh    # ทดลองสั้น ๆ
 ### ผลจริง (เทรนแล้ว 2026-09-03)
 `yolo11s` 66 epoch (patience ตัดจาก 80) → **COCO cup val mAP50 = 0.707**, mAP50-95 = 0.528,
 P 0.74 / R 0.65 · รูปในห้องทั้ง 5 ใบ conf 0.89–0.92 ไม่มี false positive (ดู `docs/model-eval.jpg`)
-best.pt อยู่ที่ **GitHub Release `v1`**
+v1 (`best.pt`) ยังอยู่ที่ GitHub Release `v1` แต่ **แอปไม่ได้โหลดจากตรงนั้นแล้ว** (ดู "ส่งมอบ")
 
 ### ผลรอบ 2 (เทรนแล้ว 2026-10-05) — เพิ่ม Open Images
 `yolo11s` 80 epoch บน COCO cup + Open Images (train ~35k รูป รวม negative) · weights อยู่ที่ `runs/cup_big3/`
@@ -122,11 +122,15 @@ best.pt อยู่ที่ **GitHub Release `v1`**
 - path ของ weights คือ `runs/cup_big*/weights/best.pt` (ไม่มี `detect/`)
 
 ### ส่งมอบ
+แอปอ่านโมเดลจาก `app/models/` **เท่านั้น ไม่โหลดจากเน็ต** (แพ็กไปกับเครื่อง/installer) ไฟล์ไม่เก็บใน git —
+คัดลอกจากเครื่องเทรนไปวางเองบนทุกเครื่องที่จะรันแอป:
 ```bash
-gh release create v1 runs/cup_big/weights/best.pt --title "cup detector v1" \
-  --notes "yolo11s / COCO cup + 15 room imgs / mAP50 0.707"
+cp runs/cup_big3/weights/best.pt app/models/cup_v2.pt
+# เครื่อง CPU ล้วน / mac Intel: export ONNX ไว้ข้างกัน (imgsz ต้องตรงกับ config.yaml)
+.venv-train/bin/yolo export model=app/models/cup_v2.pt format=onnx imgsz=480    # → app/models/cup_v2.onnx
 ```
-แอป (`app/app.py`) โหลด best.pt จาก Release URL อัตโนมัติถ้าไม่มีใน `app/models/` — ไม่เก็บใน git
+`model_path: auto` ใช้ `.pt` เมื่อมี CUDA/MPS และ `.onnx` เมื่อ CPU ล้วน (ต้อง `pip install "onnx==1.23.*" "onnxruntime==1.23.*"`)
+ประวัติ: v1 ส่งด้วย `gh release create v1 ...` — Release นั้นยังอยู่ แต่แอปรุ่นนี้ไม่อ่านมัน
 
 ### แผนสำรอง (R5)
 ถ้าเทรนไม่ทันหรือผลไม่ผ่านเกณฑ์: ใช้ `yolo11m.pt` COCO ตรงๆ แล้วกรองเฉพาะ
