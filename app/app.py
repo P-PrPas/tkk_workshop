@@ -521,7 +521,7 @@ class Station(QWidget):
         self.cam_btn = Button("เลือกกล้อง", "C")
         self.cam_btn.clicked.connect(self.pick_camera)
         self.mode = "inspect"                       # inspect = เช็กลิสต์ตรวจแก้ว · zone = ย้ายแก้ว A → B
-        self.mode_btn = Button("โหมด: ตรวจแก้ว", "Z")
+        self.mode_btn = Button("โหมด: ตรวจ", "Z")
         self.mode_btn.clicked.connect(self.toggle_mode)
         self.redraw_btn = Button("วาดใหม่", "X")
         self.redraw_btn.clicked.connect(self.start_drawing)
@@ -607,12 +607,12 @@ class Station(QWidget):
             keys.addLayout(row)
             self.hand_conf_inputs[key] = spin
         keys.addWidget(new_round)
-        zone_row = QHBoxLayout()                    # ปุ่มวาดใหม่โผล่เฉพาะโหมด zone — แถวเดียวกับปุ่มโหมด ไม่กินที่เพิ่ม
-        zone_row.setSpacing(8)
-        zone_row.addWidget(self.mode_btn, 3)
-        zone_row.addWidget(self.redraw_btn, 2)
-        keys.addLayout(zone_row)
-        keys.addWidget(self.cam_btn)
+        cam_row = QHBoxLayout()                     # กล้อง · โหมด (· วาดใหม่ เฉพาะโหมด zone) อยู่แถวเดียว —
+        cam_row.setSpacing(8)                       # แถวใหม่จะกิน 44px จากรายการชิ้นงาน (Rack) จนแถวหาย
+        cam_row.addWidget(self.cam_btn, 5)
+        cam_row.addWidget(self.mode_btn, 7)
+        cam_row.addWidget(self.redraw_btn, 6)
+        keys.addLayout(cam_row)
         strip = QHBoxLayout()
         strip.setSpacing(8)
         for label, hint, fn in (("บันทึกภาพ", "S", self.shot), ("เต็มจอ", "F", self.fullscreen),
@@ -677,7 +677,7 @@ class Station(QWidget):
     def toggle_mode(self):
         if self.mode == "inspect":
             self.mode = "zone"
-            self.mode_btn.set_label("โหมด: Zone A → B")
+            self.mode_btn.set_label("โหมด: Zone")
             self.redraw_btn.show()
             self.an.set_mode("zone")
             if not all(self.view.zones.values()):
@@ -685,7 +685,7 @@ class Station(QWidget):
         else:
             self.mode = "inspect"
             self.view.stage, self.view.pts = None, []
-            self.mode_btn.set_label("โหมด: ตรวจแก้ว")
+            self.mode_btn.set_label("โหมด: ตรวจ")
             self.redraw_btn.hide()
             self.an.set_mode("inspect")
 
