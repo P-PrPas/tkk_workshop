@@ -11,4 +11,6 @@ PySide6-Essentials==6.10.*   # GUI — ตัว Essentials ไม่ใช่ P
 #   NVIDIA (Win/Linux): pip install --force-reinstall torch torchvision --index-url https://download.pytorch.org/whl/cu124
 #                       (เลี่ยง cuXXX ที่สูงกว่า "CUDA Version" ใน nvidia-smi) แล้ว device: cuda
 #   Apple Silicon (mac): pip install torch torchvision  (ตัว PyPI มี MPS อยู่แล้ว) แล้ว device: mps
-#   CPU ล้วน: pip install onnxruntime + model_path: models/best.onnx  (บน mac Intel ทางเดียว)
+#   CPU ล้วน: pip install "onnx==1.23.*" "onnxruntime==1.23.*"  แล้ว model_path: auto จะใช้ models/cup_v2.onnx เอง  (บน mac Intel ทางเดียว)
+#             ต้องลง onnx ด้วย — ultralytics เช็กทั้งคู่ ถ้าขาดมันจะ pip install เองตอนเปิดแอป (ค้าง ~20 วิตอนออฟไลน์)
+#             1.23.* คือรุ่นสุดท้ายที่ onnxruntime ยังมี wheel ให้ mac Intel · ทดสอบแล้วกับ cup_v2.onnx

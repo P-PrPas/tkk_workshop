@@ -39,6 +39,7 @@ no camera required. Re-shoot from the live app on the demo laptop before the eve
   - [Controls](#controls)
   - [`config.yaml`](#configyaml)
   - [Choosing a compute device (CUDA / MPS / CPU)](#choosing-a-compute-device-cuda--mps--cpu)
+  - [Zone mode (move a cup from A to B)](#zone-mode-move-a-cup-from-a-to-b)
   - [Troubleshooting](#troubleshooting)
 - [Development](#development)
 - [Design docs](#design-docs)
@@ -76,7 +77,7 @@ Two object detectors, deliberately at opposite extremes. The _contrast_ is the c
 | Architecture | YOLO11n | YOLO11s |
 | Training data | ~10 in-room photos + ~23 COCO cups | COCO 2017 `cup` — 9 204 train / 390 val |
 | Epochs | 3 (~15 s on CPU) | 66 (~1–2 h on a V100) |
-| Trained | live, in the session | ahead of time → [GitHub Release `v1`](https://github.com/P-PrPas/tkk_workshop/releases) |
+| Trained | live, in the session | ahead of time → weights copied into `app/models/` by hand (not downloaded by the app) |
 | Result | finds cups in still photos, struggles live | COCO cup val **mAP50 = 0.707**; in-room cups 0.89–0.92 conf |
 
 Both fine-tune from `yolo11n.pt` / `yolo11s.pt` — checkpoints that **already know
@@ -119,6 +120,7 @@ tkk_workshop/
 │   ├── app.py                # the instructor runs this — the Qt window, display only
 │   ├── vision.py             # Camera / Analyzer / rules / Inspection — no GUI in it
 │   ├── overlay.py            # what gets drawn onto the frame — no torch in it
+│   ├── zone.py               # zone mode state machine (A → B) — no torch, no GUI
 │   ├── config.yaml           # every value you might tune in the room
 │   ├── requirements.txt      # pinned to match the notebook
 │   └── test_vision.py        # logic self-check, no camera needed
@@ -200,7 +202,7 @@ right build for your machine, then the app picks it up automatically:
 | --- | --- | --- |
 | **NVIDIA** (Windows / Linux) | `pip install --force-reinstall torch torchvision --index-url https://download.pytorch.org/whl/cu124` | Pick a `cuXXX` no higher than the “CUDA Version” shown by `nvidia-smi`. |
 | **Apple Silicon** (M1–M4) | `pip install torch torchvision` | The default PyPI wheel already includes the MPS backend. |
-| **Intel Mac / no GPU** | `pip install onnxruntime` and set `model_path: models/best.onnx` in `config.yaml` | There is no GPU path; ONNX is the fastest CPU option. |
+| **Intel Mac / no GPU** | `pip install "onnx==1.23.*" "onnxruntime==1.23.*"` — with `model_path: auto` the app then uses `models/cup_v2.onnx` | There is no GPU path; ONNX is the fastest CPU option. Install **both** packages: ultralytics needs `onnx` as well, and if it is missing it tries to `pip install` it at launch (a ~20 s stall offline). |
 
 macOS has **no CUDA** — `--index-url .../cu124` has no macOS wheel. Use MPS or ONNX.
 
@@ -212,7 +214,8 @@ macOS has **no CUDA** — `--index-url .../cu124` has no macOS wheel. Use MPS or
 python app/app.py
 ```
 
-First launch downloads `best.pt` (from Release `v1`) and `hand_landmarker.task`.
+The detector weights are **not downloaded** — put `cup_v2.pt` (and `cup_v2.onnx` for CPU-only machines)
+in `app/models/` (git-ignored). First launch only downloads `hand_landmarker.task`.
 The console prints the device it chose: `YOLO device: CUDA / MPS / CPU`.
 
 **5. (optional) Check the logic**
@@ -233,10 +236,12 @@ Every button in the sidebar has a keyboard shortcut:
 | --- | --- |
 | `R` | Start a new inspection round — clears the checklist, trails and track IDs |
 | `C` | Pick a camera — menu of the indices found at startup; the key alone cycles to the next |
+| `Z` | Switch between inspection mode and **zone mode** (A → B) — see [Zone mode](#zone-mode-move-a-cup-from-a-to-b) |
+| `X` | Zone mode: redraw polygons A and B |
 | `S` | Save a still (`shot_<timestamp>.png`, camera view only) |
 | `D` | Toggle debug overlay (hand points-in-box count) |
 | `F` | Toggle fullscreen ↔ windowed |
-| `Q` / `Esc` / close window | Quit |
+| `Q` / `Esc` / close window | Quit (`Esc` while drawing a zone clears the polygon instead) |
 
 The window is freely resizable — drag any edge; the video is letterboxed to fit.
 
@@ -247,7 +252,7 @@ during an event.**
 
 | Key | Default | Meaning |
 | --- | --- | --- |
-| `model_path` | `models/best.pt` | `.pt` (GPU-friendly) · `.onnx` (CPU, auto-exported) · `yolo11m.pt` (fallback) |
+| `model_path` | `auto` | `auto` = `models/cup_v2.pt` on CUDA/MPS, `models/cup_v2.onnx` on CPU-only (if present) · or name a file · `yolo11m.pt` (fallback) |
 | `cup_class` | `0` | `0` for the trained model · `41` for `yolo11m.pt` (COCO) |
 | `device` | _(blank)_ | Blank = auto (`cuda → mps → cpu`). Force with `cuda` / `mps` / `cpu`. |
 | `camera_index` | `0` | Starting camera — switch at runtime with the **กล้อง** button / `C`. Try `1` or `2` if it doesn’t open |
@@ -263,11 +268,14 @@ during an event.**
 | `grip_min_points` | `10` | Hand landmarks (of 21) that must fall inside the cup box |
 | `grip_box_margin` | `0.35` | Cup box is expanded by this fraction before counting points |
 | `grip_max_size_ratio` | `4.0` | Max hand/cup size ratio — rejects a hand pointing from far away |
-| `hold_frames` / `release_frames` | `3` / `6` | Hysteresis: frames to latch `HOLDING` on / off (off > on = no flicker) |
+| `hold_frames` / `release_frames` | `3` / `6` | Hysteresis: frames to latch `HOLDING` on / off (off > on = no flicker). In zone mode `hold_frames` is also how long a hand must grip a cup in A |
 | `pick_seconds` | `1.0` | Accumulated holding time before inspection completes; adjustable in the right panel. Green fill inside each box shows progress |
 | `hand_grace_seconds` | `0.4` | Freeze progress briefly when a hand disappears, then decay it. Invisible time never adds progress |
 | `trail_length` | `60` | Points kept in each cup’s motion trail — `0` disables trails |
 | `forget_seconds` | `4` | An *uninspected* cup gone this long drops off the checklist; inspected ones stay until reset |
+| `zone_settle_frames` | `6` | Zone mode: frames a cup must stay out of A (no hand seen) / back in A before its state changes |
+| `zone_handoff_seconds` | `3.0` | Zone mode: a lost track id's state passes to a new id appearing within this time … |
+| `zone_handoff_dist` | `1.5` | … and within this many cup-lengths of where it vanished |
 
 ### Choosing a compute device (CUDA / MPS / CPU)
 
@@ -279,7 +287,28 @@ startup log always show what is actually running.
 > `python -c "import torch; print(torch.__version__, torch.cuda.is_available())"`.
 > A version ending in `+cpu` is the CPU-only build — reinstall using the table above.
 
-### Troubleshooting
+### Zone mode (move a cup from A to B)
+
+<p align="center"><img src="docs/app-zone.png" alt="Zone mode: four cups in the four states" width="900"></p>
+
+The default mode is the inspection checklist. Press **Z** (or the *โหมด* button) to switch to **zone mode**:
+draw two polygons on the live image — **A** (start) then **B** (finish) — and every cup shows where it is
+in the A → B journey.
+
+| State | Colour | Meaning |
+| --- | --- | --- |
+| `IDLE` | grey | never been in A (lying anywhere else, or started in B) |
+| `AT A` | violet | the cup's box centre is inside A |
+| `IN TRANSIT` | amber | left A — a hand gripped it in A (`hold_frames`), or it stayed out of A for `zone_settle_frames`. Stays amber even if put down mid-way; back in A (no hand) → `AT A` |
+| `DONE` | green | entered B while in transit. Stays until **R** (new round) |
+
+Drawing: left-click adds a point · double-click or **Enter** closes the polygon (≥ 3 points) · right-click or
+**Backspace** undoes a point · **Esc** clears the polygon being drawn (Esc again leaves zone mode) ·
+**X** redraws both. B may not overlap A. Zones are remembered for the session only — a new venue means a new
+camera angle, so they are never reloaded from disk. If a cup's track id changes while a hand covers it, the new id
+inherits its state (`zone_handoff_*`). The right panel lists each cup's state with a `DONE / total` counter.
+
+## Troubleshooting
 
 | Symptom | Fix |
 | --- | --- |
@@ -291,8 +320,8 @@ startup log always show what is actually running.
 | A cup gets ticked when you only reach past it | Raise `pick_frames`. Ticked too slowly? Lower it. |
 | Cups not detected | Lower `conf` to `0.15`; check lighting; try `imgsz: 640`. |
 | `HOLDING` flickers | Increase `release_frames`. |
-| ~5 FPS | Enable the GPU (see step 3) or switch to `best.onnx` + `onnxruntime`. |
-| Model download fails | `gh release download v1 -R P-PrPas/tkk_workshop -p best.pt -D app/models` |
+| ~5 FPS | Enable the GPU (see step 3) or use `cup_v2.onnx` (`pip install "onnx==1.23.*" "onnxruntime==1.23.*"`). |
+| “หาไฟล์โมเดลไม่เจอ” | Copy `cup_v2.pt` (+ `cup_v2.onnx`) into `app/models/` — the app never downloads weights. |
 
 ---
 
