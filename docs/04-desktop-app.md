@@ -141,7 +141,7 @@ forget_seconds: 4            # แก้วที่ยังไม่ถูก�
 - `device:` เว้นว่าง = **auto** (`pick_device()` ไล่ cuda → mps → cpu) ไม่ต้องตั้งเอง · ใส่ค่าเมื่ออยากบังคับ
 - ให้ auto เจอ GPU ต้องลง torch ให้ตรงเครื่องก่อน: **NVIDIA (Win/Linux)** torch cu124 (ไม่เกิน CUDA ใน
   `nvidia-smi`) · **Apple Silicon** torch จาก PyPI มี MPS มาแล้ว · **mac Intel / CPU ล้วน** ไม่มี GPU →
-  วาง `models/cup_v2.onnx` + `pip install onnxruntime` (`model_path: auto` เลือกให้เอง) · ลด `imgsz` 480→384 ช่วยทุกทาง
+  วาง `models/cup_v2.onnx` + `pip install "onnx==1.23.*" "onnxruntime==1.23.*"` (`model_path: auto` เลือกให้เอง · ต้องลงทั้งสองตัว ไม่งั้น ultralytics ไป pip install `onnx` เองตอนเปิดแอป) · ลด `imgsz` 480→384 ช่วยทุกทาง
 - **ไม่มี CUDA บน macOS** — `pip install torch --index-url .../cu124` ไม่มี wheel ให้ mac (auto เลย fallback MPS/CPU)
 - ตอนเปิดแอปพิมพ์ `YOLO device: ...` บอกว่า auto เลือกอะไร — เจอ GPU แต่ยังขึ้น CPU มักเพราะลง torch ตัว `+cpu`
 

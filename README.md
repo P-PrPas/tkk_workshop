@@ -202,7 +202,7 @@ right build for your machine, then the app picks it up automatically:
 | --- | --- | --- |
 | **NVIDIA** (Windows / Linux) | `pip install --force-reinstall torch torchvision --index-url https://download.pytorch.org/whl/cu124` | Pick a `cuXXX` no higher than the “CUDA Version” shown by `nvidia-smi`. |
 | **Apple Silicon** (M1–M4) | `pip install torch torchvision` | The default PyPI wheel already includes the MPS backend. |
-| **Intel Mac / no GPU** | `pip install onnxruntime` — with `model_path: auto` the app then uses `models/cup_v2.onnx` | There is no GPU path; ONNX is the fastest CPU option. |
+| **Intel Mac / no GPU** | `pip install "onnx==1.23.*" "onnxruntime==1.23.*"` — with `model_path: auto` the app then uses `models/cup_v2.onnx` | There is no GPU path; ONNX is the fastest CPU option. Install **both** packages: ultralytics needs `onnx` as well, and if it is missing it tries to `pip install` it at launch (a ~20 s stall offline). |
 
 macOS has **no CUDA** — `--index-url .../cu124` has no macOS wheel. Use MPS or ONNX.
 
@@ -320,7 +320,7 @@ inherits its state (`zone_handoff_*`). The right panel lists each cup's state wi
 | A cup gets ticked when you only reach past it | Raise `pick_frames`. Ticked too slowly? Lower it. |
 | Cups not detected | Lower `conf` to `0.15`; check lighting; try `imgsz: 640`. |
 | `HOLDING` flickers | Increase `release_frames`. |
-| ~5 FPS | Enable the GPU (see step 3) or use `cup_v2.onnx` + `onnxruntime`. |
+| ~5 FPS | Enable the GPU (see step 3) or use `cup_v2.onnx` (`pip install "onnx==1.23.*" "onnxruntime==1.23.*"`). |
 | “หาไฟล์โมเดลไม่เจอ” | Copy `cup_v2.pt` (+ `cup_v2.onnx`) into `app/models/` — the app never downloads weights. |
 
 ---

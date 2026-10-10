@@ -585,7 +585,7 @@ def resolve_model_path(cfg):
 
 def load_model(cfg):
     """โมเดลอยู่ใน app/models/ — ไม่โหลดจากอินเทอร์เน็ต (แพ็กไปกับเครื่อง/installer)
-    .onnx ใช้กับ CPU ล้วน (ต้องมี onnxruntime)"""
+    .onnx ใช้กับ CPU ล้วน (ต้องมีทั้ง onnx และ onnxruntime — ดู requirements.txt)"""
     p = Path(cfg["model_path"])
     if not p.is_absolute():
         p = HERE / p
@@ -609,7 +609,7 @@ def load_model(cfg):
         print("  · NVIDIA (Win/Linux): pip install --force-reinstall torch torchvision \\")
         print("        --index-url https://download.pytorch.org/whl/cu124   (torch ตอนนี้เป็นตัว +cpu?)")
         print("  · Apple Silicon: pip install torch torchvision  (PyPI มี MPS อยู่แล้ว)")
-        print("  · CPU ล้วน / mac Intel: วาง models/cup_v2.onnx ไว้ข้าง .pt แล้วใช้ model_path: auto  +  pip install onnxruntime")
+        print("  · CPU ล้วน / mac Intel: วาง models/cup_v2.onnx ไว้ข้าง .pt แล้วใช้ model_path: auto  +  pip install \"onnx==1.23.*\" \"onnxruntime==1.23.*\"")
         print("──────────────────────────────────────────────────────────────")
     else:
         print("YOLO device:", dev.upper(), "(onnx)" if p.suffix == ".onnx" else "")
