@@ -214,15 +214,16 @@ macOS has **no CUDA** — `--index-url .../cu124` has no macOS wheel. Use MPS or
 python app/app.py
 ```
 
-The detector weights are **not downloaded by the app** — put `cup_v1.pt` (and `cup_v1.onnx` for CPU-only machines)
-in `app/models/` (git-ignored). v1 is the model in GitHub Release `v1`:
+The detector weights are **not downloaded by the app** — put `cup_v2.pt` (and `cup_v2.onnx` for CPU-only machines)
+in `app/models/` (git-ignored); copy them from the training box (see `docs/03-models.md`). The first model, v1, is in
+GitHub Release `v1` and is the fallback if v2 misses a cup you need (`model_name: cup_v1` in `config.yaml`):
 
 ```bash
 gh release download v1 -R P-PrPas/tkk_workshop -p best.pt -O app/models/cup_v1.pt
 gh release download v1 -R P-PrPas/tkk_workshop -p best.onnx -O app/models/cup_v1.onnx   # CPU-only machines
 ```
 
-First launch only downloads `hand_landmarker.task`. The newer `cup_v2` is opt-in (`model_name: cup_v2` in `config.yaml`).
+First launch only downloads `hand_landmarker.task`.
 The console prints the device it chose: `YOLO device: CUDA / MPS / CPU`.
 
 **5. (optional) Check the logic**
@@ -243,6 +244,7 @@ Every button in the sidebar has a keyboard shortcut:
 | --- | --- |
 | `R` | Start a new inspection round — clears the checklist, trails and track IDs |
 | `C` | Pick a camera — menu of the indices found at startup; the key alone cycles to the next |
+| `T` | Open / close the **settings** window — the cup confidence, hold time and the three MediaPipe thresholds (take effect immediately, not saved to `config.yaml`) |
 | `Z` | Switch between inspection mode and **zone mode** (A → B) — see [Zone mode](#zone-mode-move-a-cup-from-a-to-b) |
 | `X` | Zone mode: redraw polygons A and B |
 | `S` | Save a still (`shot_<timestamp>.png`, camera view only) |
@@ -254,13 +256,15 @@ The window is freely resizable — drag any edge; the video is letterboxed to fi
 
 ### `config.yaml`
 
+<p align="center"><img src="docs/app-settings.png" alt="The settings window (T) floating over the live view" width="900"></p>
+
 Every value that ever needs tuning at the venue lives here — **never edit `app.py`
 during an event.**
 
 | Key | Default | Meaning |
 | --- | --- | --- |
 | `model_path` | `auto` | `auto` = `models/<model_name>.pt` on CUDA/MPS, `models/<model_name>.onnx` on CPU-only (only if the file exists **and** `onnx` + `onnxruntime` are installed, else the `.pt`) · or name a file · `yolo11m.pt` (fallback) |
-| `model_name` | `cup_v1` | Which weights `auto` picks: `cup_v1` (first model, = Release `v1`) · `cup_v2` (adds Open Images: far better with a hand over the cup, but missed a clear tall tumbler it had never seen — compare on the demo cups before switching) |
+| `model_name` | `cup_v2` | Which weights `auto` picks: `cup_v2` (adds Open Images: far better with a hand over the cup, but missed a clear tall tumbler it had never seen) · `cup_v1` (first model, = Release `v1`; switch back if v2 misses a demo cup) |
 | `cup_class` | `0` | `0` for the trained model · `41` for `yolo11m.pt` (COCO) |
 | `device` | _(blank)_ | Blank = auto (`cuda → mps → cpu`). Force with `cuda` / `mps` / `cpu`. |
 | `camera_index` | `0` | Starting camera — switch at runtime with the **กล้อง** button / `C`. Try `1` or `2` if it doesn’t open |
@@ -269,7 +273,7 @@ during an event.**
 | `window_width` | `1280` | Initial window width |
 | `camera_width` / `camera_height` | `1280` / `720` | Resolution requested from the camera — higher = crisper HUD on a projector |
 | `imgsz` | `480` | Inference size. `384` faster, `640` slightly more accurate |
-| `conf` | `0.25` | Confidence required to start a new cup ID; adjustable in the right panel. Existing IDs can use weaker detections |
+| `conf` | `0.25` | Confidence required to start a new cup ID; adjustable in the settings window (**T**). Existing IDs can use weaker detections |
 | `track_low_conf` | `0.10` | Detection floor for continuing existing cup tracks; weak detections cannot start new IDs |
 | `track_buffer` | `30` | Analysis frames ByteTrack keeps lost IDs available for matching |
 | `cup_memory_frames` | `15` | How long a hidden cup keeps its last box |
@@ -277,7 +281,7 @@ during an event.**
 | `grip_box_margin` | `0.35` | Cup box is expanded by this fraction before counting points |
 | `grip_max_size_ratio` | `4.0` | Max hand/cup size ratio — rejects a hand pointing from far away |
 | `hold_frames` / `release_frames` | `3` / `6` | Hysteresis: frames to latch `HOLDING` on / off (off > on = no flicker) |
-| `pick_seconds` | `1.0` | Accumulated holding time before inspection completes; adjustable in the right panel. Green fill inside each box shows progress |
+| `pick_seconds` | `1.0` | Accumulated holding time before inspection completes; adjustable in the settings window (**T**). Green fill inside each box shows progress |
 | `hand_grace_seconds` | `0.4` | Freeze progress briefly when a hand disappears, then decay it. Invisible time never adds progress |
 | `trail_length` | `60` | Points kept in each cup’s motion trail — `0` disables trails |
 | `forget_seconds` | `4` | An *uninspected* cup gone this long drops off the checklist; inspected ones stay until reset |
@@ -335,7 +339,7 @@ Known limits of zone mode — release the cup and move your hand away after putt
 | A cup gets ticked when you only reach past it | Raise `pick_frames`. Ticked too slowly? Lower it. |
 | Cups not detected | Lower `conf` to `0.15`; check lighting; try `imgsz: 640`. |
 | `HOLDING` flickers | Increase `release_frames`. |
-| ~5 FPS | Enable the GPU (see step 3) or use the `.onnx` (`pip install "onnx==1.23.*" "onnxruntime==1.23.*"` + `models/cup_v1.onnx`). |
+| ~5 FPS | Enable the GPU (see step 3) or use the `.onnx` (`pip install "onnx==1.23.*" "onnxruntime==1.23.*"` + `models/cup_v2.onnx`). |
 | “หาไฟล์โมเดลไม่เจอ” | Put the weights in `app/models/` — the app never downloads them: `gh release download v1 -R P-PrPas/tkk_workshop -p best.pt -O app/models/cup_v1.pt` |
 
 ---

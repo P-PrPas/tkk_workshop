@@ -17,7 +17,7 @@ app/
 ├── config.yaml       # ค่าที่ต้องปรับหน้างาน
 ├── requirements.txt  # pin เวอร์ชันให้ตรงกับโน้ตบุ๊ก
 ├── test_vision.py    # self-check ตรรกะ (hysteresis / CupMemory / hand_on_cup) — ไม่ต้องมีกล้อง
-└── models/cup_v1.pt  # วางเอง (+ cup_v1.onnx สำหรับเครื่อง CPU ล้วน) — gitignore ไว้ แอปไม่โหลดจากเน็ต
+└── models/cup_v2.pt  # วางเอง (+ cup_v2.onnx สำหรับเครื่อง CPU ล้วน) — gitignore ไว้ แอปไม่โหลดจากเน็ต
 tools/
 ├── diag.py           # เปิดกล้อง พิมพ์สัญญาณทุกเฟรม — ไว้ debug ว่า HOLDING พังตรงไหน
 ├── optimize.py       # ลอง export ONNX/OpenVINO แล้ววัดว่าเร็วขึ้นบนเครื่องนี้ไหม
@@ -105,7 +105,7 @@ HiDPI อัตโนมัติ · `QPainter` antialias เต็มรูป�
 ## config.yaml
 ```yaml
 model_path: auto             # CUDA/MPS → models/<model_name>.pt · CPU ล้วน → .onnx (ถ้ามีไฟล์และลง onnx+onnxruntime แล้ว)
-model_name: cup_v1           # cup_v1 = รอบแรก (ตัวเดียวกับ Release v1) · cup_v2 = เพิ่ม Open Images (ดู docs/03)
+model_name: cup_v2           # cup_v2 = เพิ่ม Open Images (default) · cup_v1 = รอบแรก (ตัวเดียวกับ Release v1) ดู docs/03
 cup_class: 0                  # 41 ถ้า fallback ไป yolo11m.pt (COCO)
 device:                      # เว้นว่าง=auto · cuda=NVIDIA · mps=Apple Silicon · cpu=บังคับ
 camera_index: 0              # กล้องเริ่มต้น · สลับระหว่างรันได้ที่ปุ่ม "กล้อง" (คีย์ C)
@@ -142,7 +142,7 @@ forget_seconds: 4            # แก้วที่ยังไม่ถูก�
 - `device:` เว้นว่าง = **auto** (`pick_device()` ไล่ cuda → mps → cpu) ไม่ต้องตั้งเอง · ใส่ค่าเมื่ออยากบังคับ
 - ให้ auto เจอ GPU ต้องลง torch ให้ตรงเครื่องก่อน: **NVIDIA (Win/Linux)** torch cu124 (ไม่เกิน CUDA ใน
   `nvidia-smi`) · **Apple Silicon** torch จาก PyPI มี MPS มาแล้ว · **mac Intel / CPU ล้วน** ไม่มี GPU →
-  วาง `models/cup_v1.onnx` + `pip install "onnx==1.23.*" "onnxruntime==1.23.*"` (`model_path: auto` เลือกให้เอง · ต้องลงทั้งสองตัว ไม่งั้น ultralytics ไป pip install `onnx` เองตอนเปิดแอป) · ลด `imgsz` 480→384 ช่วยทุกทาง
+  วาง `models/cup_v2.onnx` + `pip install "onnx==1.23.*" "onnxruntime==1.23.*"` (`model_path: auto` เลือกให้เอง · ต้องลงทั้งสองตัว ไม่งั้น ultralytics ไป pip install `onnx` เองตอนเปิดแอป) · ลด `imgsz` 480→384 ช่วยทุกทาง
 - **ไม่มี CUDA บน macOS** — `pip install torch --index-url .../cu124` ไม่มี wheel ให้ mac (auto เลย fallback MPS/CPU)
 - ตอนเปิดแอปพิมพ์ `YOLO device: ...` บอกว่า auto เลือกอะไร — เจอ GPU แต่ยังขึ้น CPU มักเพราะลง torch ตัว `+cpu`
 
@@ -192,7 +192,7 @@ class HoldState:
 | เปิดกล้องไม่ได้ตอนเริ่ม | ข้อความไทยบอกว่าต้องทำอะไร แล้วจบโปรแกรม ไม่ใช่ traceback |
 | กล้องหลุดกลางทาง | พยายามต่อใหม่ทุก 1 วินาที แสดง "กำลังเชื่อมต่อกล้องใหม่..." บนจอ |
 | ไม่เจอมือ / ไม่เจอแก้ว | สถานะปกติ ไม่ใช่ error — วาดเฟรมต่อไปเงียบๆ |
-| โหลดโมเดลไม่สำเร็จ | แอปไม่โหลดโมเดลจากเน็ต — วาง `cup_v1.pt` ไว้ที่ `app/models/` (`gh release download v1 -R P-PrPas/tkk_workshop -p best.pt -O app/models/cup_v1.pt`) · ไม่มีไฟล์ → บอก path ที่ต้องวาง + แผนสำรอง yolo11m |
+| โหลดโมเดลไม่สำเร็จ | แอปไม่โหลดโมเดลจากเน็ต — วาง `cup_v2.pt` ไว้ที่ `app/models/` (v1 สำรอง: `gh release download v1 -R P-PrPas/tkk_workshop -p best.pt -O app/models/cup_v1.pt`) · ไม่มีไฟล์ → บอก path ที่ต้องวาง + แผนสำรอง yolo11m |
 | Python นอก 3.11–3.13 | เตือนตอนเปิดแอป + บอกคำสั่งสร้าง venv 3.12 (mediapipe/torch ยังไม่มี wheel 3.14 ที่ครบ) |
 | macOS: MediaPipe เรียก Metal delegate แล้ว abort (`DrishtiMetalHelper` / `service_ Service is unavailable`) | `load_hand_landmarker()` ปัก `delegate=CPU` ไว้ — โมเดลมือรัน CPU ไม่ต้องแตะ GPU |
 
