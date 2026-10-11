@@ -11,6 +11,7 @@
   5. Inspection — เช็กลิสต์ว่าชิ้นไหนถูกหยิบไปตรวจแล้ว + เส้นทางที่มันเคลื่อนที่มา
   6. จัดการ error จริง — กล้องหลุดต่อใหม่, โมเดล/กล้องหาย ขึ้นข้อความไทย
 """
+import importlib.util
 import os
 import sys
 import threading
@@ -42,7 +43,7 @@ HAND_TASK = HERE / "hand_landmarker.task"
 HAND_TASK_URL = ("https://storage.googleapis.com/mediapipe-models/hand_landmarker/"
                  "hand_landmarker/float16/1/hand_landmarker.task")
 HAND_TASK_MIRROR = HERE.parent / "data" / "hand_landmarker.task"
-MODEL_PT, MODEL_ONNX = "models/cup_v2.pt", "models/cup_v2.onnx"   # model_path: auto เลือกจากสองตัวนี้ (imgsz 480)
+ONNX_PACKAGES = ("onnx", "onnxruntime")   # ultralytics เช็กทั้งคู่ตอนโหลด .onnx — ขาดตัวไหนมันจะ pip install เองตอนเปิดแอป
 
 TIPS = [4, 8, 12, 16, 20]     # ปลายนิ้วทั้งห้า
 PIPS = [2, 6, 10, 14, 18]     # ข้อกลางของแต่ละนิ้ว
@@ -575,12 +576,22 @@ def pick_device(cfg):
 
 
 def resolve_model_path(cfg):
-    """model_path: auto → cup_v2.pt เมื่อมี CUDA/MPS (เร็วสุด) · CPU ล้วน (รวม mac Intel) ใช้ cup_v2.onnx
-    ถ้ามีไฟล์ ไม่งั้นใช้ .pt บน CPU · ระบุชื่อไฟล์เองใน config ก็ได้ ใช้ตามนั้น"""
+    """model_path: auto → models/<model_name>.pt เมื่อมี CUDA/MPS (เร็วสุด) · CPU ล้วน (รวม mac Intel) ใช้
+    models/<model_name>.onnx เมื่อมีไฟล์ *และ* ลง onnx + onnxruntime แล้ว — ไม่งั้นใช้ .pt บน CPU (ช้ากว่า แต่ไม่ปล่อยให้
+    ultralytics ไป pip install กลางเดโม) · ระบุชื่อไฟล์เองใน model_path ก็ได้ ใช้ตามนั้น"""
     if str(cfg["model_path"]).lower() != "auto":
         return cfg["model_path"]
-    on_cpu = pick_device({**cfg, "model_path": MODEL_PT}) == "cpu"
-    return MODEL_ONNX if on_cpu and (HERE / MODEL_ONNX).exists() else MODEL_PT
+    name = cfg.get("model_name", "cup_v1")
+    pt, onnx = f"models/{name}.pt", f"models/{name}.onnx"
+    on_cpu = pick_device({**cfg, "model_path": pt}) == "cpu"
+    if not (on_cpu and (HERE / onnx).exists()):
+        return pt
+    missing = [m for m in ONNX_PACKAGES if importlib.util.find_spec(m) is None]
+    if missing:
+        print(f"ใช้ {pt} บน CPU — ยังไม่ได้ลง {' + '.join(missing)} จึงยังใช้ {onnx} ไม่ได้ "
+              f"(ลงแล้วจะเร็วขึ้น: pip install \"onnx==1.23.*\" \"onnxruntime==1.23.*\")")
+        return pt
+    return onnx
 
 
 def load_model(cfg):
@@ -593,8 +604,9 @@ def load_model(cfg):
     if not p.exists():
         raise SystemExit(
             f"\nหาไฟล์โมเดลไม่เจอ: {p}\n"
-            "วาง cup_v2.pt (และ cup_v2.onnx สำหรับเครื่อง CPU ล้วน) ไว้ที่ app/models/\n"
-            "ไฟล์อยู่ที่เครื่องเทรน: runs/cup_big3/weights/best.pt\n"
+            f"วาง {p.name} (และ .onnx ชื่อเดียวกันสำหรับเครื่อง CPU ล้วน) ไว้ที่ app/models/\n"
+            "v1: gh release download v1 -R P-PrPas/tkk_workshop -p best.pt -O app/models/cup_v1.pt\n"
+            "v2: อยู่ที่เครื่องเทรน runs/cup_big3/weights/best.pt (ตั้ง model_name: cup_v2 ใน config.yaml)\n"
             "หรือใช้แผนสำรอง: model_path: yolo11m.pt  +  cup_class: 41  ใน config.yaml\n"
         )
     dev = pick_device(cfg)
@@ -609,7 +621,7 @@ def load_model(cfg):
         print("  · NVIDIA (Win/Linux): pip install --force-reinstall torch torchvision \\")
         print("        --index-url https://download.pytorch.org/whl/cu124   (torch ตอนนี้เป็นตัว +cpu?)")
         print("  · Apple Silicon: pip install torch torchvision  (PyPI มี MPS อยู่แล้ว)")
-        print("  · CPU ล้วน / mac Intel: วาง models/cup_v2.onnx ไว้ข้าง .pt แล้วใช้ model_path: auto  +  pip install \"onnx==1.23.*\" \"onnxruntime==1.23.*\"")
+        print("  · CPU ล้วน / mac Intel: วาง .onnx ชื่อเดียวกับ .pt ไว้ข้างกัน แล้วใช้ model_path: auto  +  pip install \"onnx==1.23.*\" \"onnxruntime==1.23.*\"")
         print("──────────────────────────────────────────────────────────────")
     else:
         print("YOLO device:", dev.upper(), "(onnx)" if p.suffix == ".onnx" else "")

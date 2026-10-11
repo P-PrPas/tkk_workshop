@@ -116,6 +116,7 @@ v1 (`best.pt`) ยังอยู่ที่ GitHub Release `v1` แต่ **�
 | รูปในห้อง 5 ใบ | ติดทุกใบ | ติดทุกใบ (มีกล่องหลอก conf 0.28 หนึ่งจุด) |
 
 - ของเดิมไม่เสีย แต่เคสมือบังดีขึ้นมาก — `hand_eval` มีแค่ 25 รูป ตัวเลขแกว่งได้
+- ⚠️ **ยังไม่ใช่ default ของแอป:** รูปห้อง 14 จาก 15 รูปอยู่ในชุดเทรนของทั้งสองโมเดล (ผลเท่ากัน = ท่องจำเท่ากัน บอกอะไรไม่ได้) รูปเดียวที่ไม่เคยเห็นเลยคือ `IMG_7298` (tumbler ใสมีหลอด): v1 เจอ 3/3 (conf สูงสุด 0.84) v2 เจอ 0/3 (สูงสุด 0.11) — ตัวอย่างเดียวแต่ชี้ทางเดียวกัน จึงให้แอปใช้ v1 ไปก่อน จนกว่าจะเทียบกับแก้วที่จะใช้โชว์จริงได้
 - ⚠️ `build_openimages_cup.py` รุ่นแรกส่ง OI `test` split เข้า `val` ทำให้ "COCO mAP50" ปนเปื้อน
   (baseline วัดได้ 0.387 ผิดจริง) แก้แล้วให้ OI เข้า train เท่านั้น — confusion matrix ใน
   `runs/cup_big3/` สร้างตอนเทรนด้วย val ที่ปนเปื้อน อย่าใช้อ้างอิง
@@ -123,14 +124,18 @@ v1 (`best.pt`) ยังอยู่ที่ GitHub Release `v1` แต่ **�
 
 ### ส่งมอบ
 แอปอ่านโมเดลจาก `app/models/` **เท่านั้น ไม่โหลดจากเน็ต** (แพ็กไปกับเครื่อง/installer) ไฟล์ไม่เก็บใน git —
-คัดลอกจากเครื่องเทรนไปวางเองบนทุกเครื่องที่จะรันแอป:
+วางเองบนทุกเครื่องที่จะรันแอป — **default คือ v1** (`model_name: cup_v1` ใน `config.yaml`):
 ```bash
+# v1 = ไฟล์ใน GitHub Release v1 (sha256 ตรงกับ runs/cup_big/weights/best.pt ที่ใช้วัดผลทุกครั้ง)
+gh release download v1 -R P-PrPas/tkk_workshop -p best.pt -O app/models/cup_v1.pt
+gh release download v1 -R P-PrPas/tkk_workshop -p best.onnx -O app/models/cup_v1.onnx   # เครื่อง CPU ล้วน / mac Intel
+
+# v2 (เลือกใช้: model_name: cup_v2) — คัดลอกจากเครื่องเทรน แล้ว export ONNX ไว้ข้างกัน (imgsz ต้องตรงกับ config.yaml)
 cp runs/cup_big3/weights/best.pt app/models/cup_v2.pt
-# เครื่อง CPU ล้วน / mac Intel: export ONNX ไว้ข้างกัน (imgsz ต้องตรงกับ config.yaml)
 .venv-train/bin/yolo export model=app/models/cup_v2.pt format=onnx imgsz=480    # → app/models/cup_v2.onnx
 ```
-`model_path: auto` ใช้ `.pt` เมื่อมี CUDA/MPS และ `.onnx` เมื่อ CPU ล้วน (ต้อง `pip install "onnx==1.23.*" "onnxruntime==1.23.*"`)
-ประวัติ: v1 ส่งด้วย `gh release create v1 ...` — Release นั้นยังอยู่ แต่แอปรุ่นนี้ไม่อ่านมัน
+`model_path: auto` ใช้ `.pt` เมื่อมี CUDA/MPS และ `.onnx` เมื่อ CPU ล้วน แต่เลือก `.onnx` ก็ต่อเมื่อลง
+`pip install "onnx==1.23.*" "onnxruntime==1.23.*"` แล้ว (ไม่งั้นใช้ `.pt` บน CPU พร้อมเตือน — ไม่ปล่อยให้ ultralytics pip install เองตอนเปิดแอป)
 
 ### แผนสำรอง (R5)
 ถ้าเทรนไม่ทันหรือผลไม่ผ่านเกณฑ์: ใช้ `yolo11m.pt` COCO ตรงๆ แล้วกรองเฉพาะ

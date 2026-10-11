@@ -1,7 +1,10 @@
 # ค่าที่ต้องจูนหน้างาน — แสงในห้องจริงไม่เคยเหมือนตอนทดสอบ
-model_path: auto             # auto = มี CUDA/MPS ใช้ models/cup_v2.pt · CPU ล้วนใช้ models/cup_v2.onnx (ถ้ามีไฟล์)
-                             # หรือระบุเอง เช่น models/cup_v2.pt · ไฟล์วางไว้ใน app/models/ (ไม่โหลดจากเน็ต)
-                             # แผนสำรอง: yolo11m.pt + cup_class 41
+model_path: auto             # auto = มี CUDA/MPS ใช้ models/<model_name>.pt · CPU ล้วนใช้ models/<model_name>.onnx
+                             #   (ถ้ามีไฟล์ และลง onnx + onnxruntime แล้ว) · หรือระบุเอง เช่น models/cup_v1.pt
+                             #   ไฟล์วางไว้ใน app/models/ (ไม่โหลดจากเน็ต) · แผนสำรอง: yolo11m.pt + cup_class 41
+model_name: cup_v1           # โมเดลที่ auto เลือก: cup_v1 = โมเดลรอบแรก (baseline · ตัวเดียวกับ Release v1)
+                             #   cup_v2 = เทรนเพิ่มด้วย Open Images (มือบังดีขึ้นมาก แต่ยังพลาดแก้วใสทรงสูงที่ไม่เคยเห็น
+                             #   — เทียบกับแก้วที่จะใช้โชว์จริงก่อนเปลี่ยน)
 cup_class: 0                  # 0 = best (1 คลาส) · 41 = yolo11m.pt (COCO)
 device:                       # เว้นว่าง = auto (cuda→mps→cpu) · ใส่ cuda/mps/cpu เมื่ออยากบังคับ
 camera_index: 0               # กล้องเริ่มต้น · สลับระหว่างรันได้ที่ปุ่ม "กล้อง" (คีย์ C)
