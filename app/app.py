@@ -276,12 +276,15 @@ class Viewport(QWidget):
             p.setPen(pen(col, 2.5))
             p.setBrush(fill)
             p.drawPolygon(QPolygonF(pts))
-            cx = sum(q.x() for q in pts) / len(pts)
-            cy = sum(q.y() for q in pts) / len(pts)
+            # ป้ายอยู่มุมซ้ายบนของกรอบ — กลางกรอบคือที่ที่แก้ววางอยู่ ป้ายตรงนั้นจะบังตัวแก้ว
+            chip = QRectF(min(q.x() for q in pts), min(q.y() for q in pts) - 34, 30, 30)
+            if chip.top() < box.top() + 2:                       # กรอบชิดขอบบนของภาพ → ย้ายเข้ามาอยู่ในมุมกรอบ
+                chip.moveTo(chip.left() + 4, chip.top() + 38)
+            chip.moveLeft(max(box.left() + 2, min(chip.left(), box.right() - 32)))
             p.setPen(Qt.PenStyle.NoPen)
             p.setBrush(QColor(6, 9, 14, 215))
-            p.drawRoundedRect(QRectF(cx - 15, cy - 15, 30, 30), 7, 7)
-            text(p, cx - 15, cy - 9, name, face(17, QFont.Weight.Bold, mono=True), col,
+            p.drawRoundedRect(chip, 7, 7)
+            text(p, chip.left(), chip.top() + 6, name, face(17, QFont.Weight.Bold, mono=True), col,
                  Qt.AlignmentFlag.AlignCenter, 30)
         if not self.stage:
             return
