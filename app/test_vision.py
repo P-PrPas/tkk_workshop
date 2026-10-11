@@ -2,13 +2,16 @@
 
 รัน:  python app/test_vision.py
 """
+import tempfile
 import time
 import numpy as np
+from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import patch
 
 from ultralytics.engine.results import Boxes
 from zone import AT_A, DONE, IDLE, TRANSIT, ZoneTracker, point_in_polygon, polygons_overlap
+import vision
 from vision import CupMemory, CupTracker, HoldState, Inspection, hand_on_cup, hand_state, match_hand_to_cup
 
 
@@ -405,7 +408,28 @@ def test_zone_redraw_resets_states():
     assert zstep(z, 1, {1: 10})[1] == {1: IDLE}
 
 
+# ─────────── เลือกไฟล์โมเดล (model_path: auto) ───────────
+def test_resolve_model_path():
+    cfg = {"model_path": "auto", "model_name": "cup_v1", "device": "cpu"}      # device: cpu = บังคับเส้นทาง CPU
+    with tempfile.TemporaryDirectory() as d, patch("vision.HERE", Path(d)):
+        (Path(d) / "models").mkdir()
+        both = patch("vision.importlib.util.find_spec", return_value=object())
+        none = patch("vision.importlib.util.find_spec", return_value=None)
+        assert vision.resolve_model_path({**cfg, "model_path": "models/x.pt"}) == "models/x.pt"   # ระบุเอง ใช้ตามนั้น
+        with both:
+            assert vision.resolve_model_path(cfg) == "models/cup_v1.pt"            # ไม่มี .onnx → .pt
+        (Path(d) / "models" / "cup_v1.onnx").write_bytes(b"x")
+        with both:
+            assert vision.resolve_model_path(cfg) == "models/cup_v1.onnx"          # CPU + มีไฟล์ + ลงแพ็กเกจครบ
+            assert vision.resolve_model_path({**cfg, "model_name": "cup_v2"}) == "models/cup_v2.pt"   # model_name ใช้จริง
+        with none:                                                                  # ขาด onnx/onnxruntime → ไม่เลือก .onnx
+            assert vision.resolve_model_path(cfg) == "models/cup_v1.pt"            #   (ไม่ปล่อย ultralytics pip install กลางเดโม)
+        with patch("vision.importlib.util.find_spec", side_effect=lambda m: None if m == "onnx" else object()):
+            assert vision.resolve_model_path(cfg) == "models/cup_v1.pt"            # ขาดตัวเดียวก็ไม่ได้
+
+
 if __name__ == "__main__":
+    test_resolve_model_path()
     test_zone_geometry()
     test_zone_idle_until_in_a_and_not_ready()
     test_zone_full_path_with_hand()

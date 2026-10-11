@@ -202,7 +202,7 @@ right build for your machine, then the app picks it up automatically:
 | --- | --- | --- |
 | **NVIDIA** (Windows / Linux) | `pip install --force-reinstall torch torchvision --index-url https://download.pytorch.org/whl/cu124` | Pick a `cuXXX` no higher than the “CUDA Version” shown by `nvidia-smi`. |
 | **Apple Silicon** (M1–M4) | `pip install torch torchvision` | The default PyPI wheel already includes the MPS backend. |
-| **Intel Mac / no GPU** | `pip install "onnx==1.23.*" "onnxruntime==1.23.*"` — with `model_path: auto` the app then uses `models/cup_v2.onnx` | There is no GPU path; ONNX is the fastest CPU option. Install **both** packages: ultralytics needs `onnx` as well, and if it is missing it tries to `pip install` it at launch (a ~20 s stall offline). |
+| **Intel Mac / no GPU** | `pip install "onnx==1.23.*" "onnxruntime==1.23.*"` — with `model_path: auto` the app then uses `models/<model_name>.onnx` | There is no GPU path; ONNX is the fastest CPU option. Install **both** packages: ultralytics needs `onnx` as well, and if it is missing it tries to `pip install` it at launch (a ~20 s stall offline). |
 
 macOS has **no CUDA** — `--index-url .../cu124` has no macOS wheel. Use MPS or ONNX.
 
@@ -214,8 +214,15 @@ macOS has **no CUDA** — `--index-url .../cu124` has no macOS wheel. Use MPS or
 python app/app.py
 ```
 
-The detector weights are **not downloaded** — put `cup_v2.pt` (and `cup_v2.onnx` for CPU-only machines)
-in `app/models/` (git-ignored). First launch only downloads `hand_landmarker.task`.
+The detector weights are **not downloaded by the app** — put `cup_v1.pt` (and `cup_v1.onnx` for CPU-only machines)
+in `app/models/` (git-ignored). v1 is the model in GitHub Release `v1`:
+
+```bash
+gh release download v1 -R P-PrPas/tkk_workshop -p best.pt -O app/models/cup_v1.pt
+gh release download v1 -R P-PrPas/tkk_workshop -p best.onnx -O app/models/cup_v1.onnx   # CPU-only machines
+```
+
+First launch only downloads `hand_landmarker.task`. The newer `cup_v2` is opt-in (`model_name: cup_v2` in `config.yaml`).
 The console prints the device it chose: `YOLO device: CUDA / MPS / CPU`.
 
 **5. (optional) Check the logic**
@@ -252,7 +259,8 @@ during an event.**
 
 | Key | Default | Meaning |
 | --- | --- | --- |
-| `model_path` | `auto` | `auto` = `models/cup_v2.pt` on CUDA/MPS, `models/cup_v2.onnx` on CPU-only (if present) · or name a file · `yolo11m.pt` (fallback) |
+| `model_path` | `auto` | `auto` = `models/<model_name>.pt` on CUDA/MPS, `models/<model_name>.onnx` on CPU-only (only if the file exists **and** `onnx` + `onnxruntime` are installed, else the `.pt`) · or name a file · `yolo11m.pt` (fallback) |
+| `model_name` | `cup_v1` | Which weights `auto` picks: `cup_v1` (first model, = Release `v1`) · `cup_v2` (adds Open Images: far better with a hand over the cup, but missed a clear tall tumbler it had never seen — compare on the demo cups before switching) |
 | `cup_class` | `0` | `0` for the trained model · `41` for `yolo11m.pt` (COCO) |
 | `device` | _(blank)_ | Blank = auto (`cuda → mps → cpu`). Force with `cuda` / `mps` / `cpu`. |
 | `camera_index` | `0` | Starting camera — switch at runtime with the **กล้อง** button / `C`. Try `1` or `2` if it doesn’t open |
@@ -320,8 +328,8 @@ inherits its state wherever it reappears (`zone_handoff_*`). The right panel lis
 | A cup gets ticked when you only reach past it | Raise `pick_frames`. Ticked too slowly? Lower it. |
 | Cups not detected | Lower `conf` to `0.15`; check lighting; try `imgsz: 640`. |
 | `HOLDING` flickers | Increase `release_frames`. |
-| ~5 FPS | Enable the GPU (see step 3) or use `cup_v2.onnx` (`pip install "onnx==1.23.*" "onnxruntime==1.23.*"`). |
-| “หาไฟล์โมเดลไม่เจอ” | Copy `cup_v2.pt` (+ `cup_v2.onnx`) into `app/models/` — the app never downloads weights. |
+| ~5 FPS | Enable the GPU (see step 3) or use the `.onnx` (`pip install "onnx==1.23.*" "onnxruntime==1.23.*"` + `models/cup_v1.onnx`). |
+| “หาไฟล์โมเดลไม่เจอ” | Put the weights in `app/models/` — the app never downloads them: `gh release download v1 -R P-PrPas/tkk_workshop -p best.pt -O app/models/cup_v1.pt` |
 
 ---
 
