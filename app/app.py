@@ -803,6 +803,10 @@ class Station(QWidget):
 
     def keyPressEvent(self, e):
         k = e.key()
+        # กดค้างทำให้ Qt ส่ง keyPress ซ้ำ ๆ — ปุ่มสลับ (C กล้อง · Z โหมด · T ตั้งค่า · F เต็มจอ · D debug) จะสลับไปมาจนไม่รู้ว่าจบที่ไหน
+        # (ยกเว้น Backspace: กดค้างเพื่อย้อนจุดตอนวาดกรอบเป็นการใช้งานปกติ)
+        if e.isAutoRepeat() and k != Qt.Key.Key_Backspace:
+            return
         if self.view.stage and k in (Qt.Key.Key_Return, Qt.Key.Key_Enter):
             self.close_polygon()
         elif self.view.stage and k == Qt.Key.Key_Backspace:
