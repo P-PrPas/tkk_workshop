@@ -6,6 +6,7 @@
     python tools/ui_preview.py                    # ฉากปกติ -> docs/app-ui.png
     python tools/ui_preview.py empty out.png      # สถานะอื่น: empty · done · many · lost
     python tools/ui_preview.py zone out.png       # โหมด zone A → B (ครบสี่สถานะ) · draw = กำลังวาดกรอบ B
+    python tools/ui_preview.py settings out.png   # หน้าต่างตั้งค่า (threshold) เปิดอยู่เหนือภาพ
 """
 import sys
 import time
@@ -86,6 +87,7 @@ STATES = {
     "lost":  lambda r: (r, False),
     "zone":  lambda r: ([(1, "done"), (2, "transit"), (3, "at_a"), (4, "idle")], True),
     "draw":  lambda r: ([(t, "idle") for t, _, _, _ in r], True),
+    "settings": lambda r: (r, True),
 }
 ZONE_STATES = {1: "done", 2: "transit", 3: "at_a", 4: "idle"}
 ZONE_A = [(0.50, 0.28), (0.68, 0.28), (0.68, 0.78), (0.50, 0.78)]      # ล้อมแก้วใบที่ 3
@@ -157,7 +159,15 @@ def main():
     qt.processEvents()
     win.tick()
     qt.processEvents()
-    win.grab().save(str(out))
+    shot = win.grab()
+    if state == "settings":                              # หน้าต่างตั้งค่าเป็นหน้าต่างแยก — grab แล้ววางทับตำแหน่งจริง
+        win.toggle_settings()
+        qt.processEvents()
+        dlg = win.settings
+        painter = ui.QPainter(shot)
+        painter.drawPixmap(dlg.mapTo(win, dlg.rect().topLeft()) if False else win.mapFromGlobal(dlg.pos()), dlg.grab())
+        painter.end()
+    shot.save(str(out))
     print("wrote", out)
 
 
