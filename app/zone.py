@@ -8,12 +8,13 @@
     TRANSIT  ออกจาก A แล้ว ยังไม่ถึง B                  อำพัน   (คงอยู่แม้มือปล่อย/วางทิ้งกลางทาง)
     DONE     เข้า B ขณะ TRANSIT                        เขียว   (คงอยู่จนกด reset)
 
-เข้า TRANSIT ได้ 2 ทาง: มือจับแก้วใน A ติดกัน hold_frames เฟรม · หรือจุดกลางออกนอก A ติดกัน
-settle_frames เฟรม (ตาข่ายนิรภัยตอน MediaPipe ตรวจมือพลาด) กลับเข้า A โดยไม่มีมือจับ
-settle_frames เฟรม = กลับเป็น AT_A
+เข้า TRANSIT ได้ 2 ทาง: มือจับแก้วใน A ติดกัน hold_frames เฟรม · หรือจุดกลางอยู่นอก A ต่อเนื่อง
+settle_seconds วินาที (ตาข่ายนิรภัยตอน MediaPipe ตรวจมือพลาด) กลับเข้า A โดยไม่มีมือจับต่อเนื่อง
+settle_seconds วินาที = กลับเป็น AT_A (นับเป็นวินาที ไม่ใช่เฟรม — CPU 3 FPS กับ GPU 30 FPS ต้องได้ผลเท่ากัน)
 
-track id หลุดระหว่างทาง (มือบัง) แล้วได้เลขใหม่ → แก้วใหม่ที่โผล่ใกล้ตำแหน่งสุดท้ายภายใน
-handoff_seconds รับสถานะต่อ
+track id หลุดระหว่างทาง (มือบัง) แล้วได้เลขใหม่ → id ใหม่รับสถานะ AT_A/TRANSIT ของแก้วที่หายไป
+(ไม่เกิน handoff_seconds) โดยเลือกใบที่ใกล้สุด — ไม่ใช้ระยะเป็นเกณฑ์ปัด เพราะคนยกแก้วข้ามโต๊ะ 3 วินาที
+เคลื่อนที่ไกลเกินรัศมีใดๆ ที่ตั้งไว้ได้ · DONE นับไปแล้วและคงอยู่เอง จึงรับต่อเฉพาะ id ที่โผล่ใกล้มาก
 
 zone เป็นพิกัดสัดส่วน 0-1 ของเฟรม (ไม่ผูกกับความละเอียดกล้อง) — แปลงเป็นพิกเซลตอน update
 """
@@ -44,8 +45,8 @@ def polygons_overlap(a, b, n=200):
 
 
 class ZoneTracker:
-    def __init__(self, hold_frames=3, settle_frames=6, handoff_seconds=3.0, handoff_dist=1.5):
-        self.hold_frames, self.settle_frames = hold_frames, settle_frames
+    def __init__(self, hold_frames=3, settle_seconds=0.5, handoff_seconds=3.0, handoff_dist=1.5):
+        self.hold_frames, self.settle_seconds = hold_frames, settle_seconds
         self.handoff_seconds, self.handoff_dist = handoff_seconds, handoff_dist
         self.a = self.b = None
         self.reset()
@@ -60,20 +61,24 @@ class ZoneTracker:
         self.reset()
 
     def reset(self):
-        self.cups = {}      # tid -> {state, held, out, back, center, size, last_live}
+        # tid -> {state, held (เฟรมที่มือจับติดกัน), out_since/back_since (เวลาที่เริ่มอยู่นอก/ในโซน A ต่อเนื่อง), center, size, last_live}
+        self.cups = {}
 
     def _set(self, tid, cup, state, events, text):
-        cup["state"], cup["held"], cup["out"], cup["back"] = state, 0, 0, 0
+        cup["state"], cup["held"], cup["out_since"], cup["back_since"] = state, 0, None, None
         events.append(f"#{tid} {text}")
 
     def _inherit(self, tid, center, live, now):
-        """ID ใหม่ที่โผล่ใกล้แก้ว (ที่ไม่ใช่ IDLE) ซึ่งเพิ่งหายไป → รับสถานะต่อ แล้วคืน (id เดิม, record)"""
+        """ID ใหม่ → รับสถานะต่อจากแก้ว (ที่ไม่ใช่ IDLE) ที่เพิ่งหายไปและอยู่ใกล้ที่สุด แล้วคืน (id เดิม, record)
+        AT_A/TRANSIT ไม่จำกัดระยะ (ดูหัวไฟล์) · DONE ต้องอยู่ใน handoff_dist × ด้านยาวกล่อง"""
         best = None
         for old, c in self.cups.items():
             if old in live or c["state"] == IDLE or now - c["last_live"] > self.handoff_seconds:
                 continue
             d = np.hypot(center[0] - c["center"][0], center[1] - c["center"][1])
-            if d <= self.handoff_dist * c["size"] and (best is None or d < best[0]):
+            if c["state"] == DONE and d > self.handoff_dist * c["size"]:
+                continue
+            if best is None or d < best[0]:
                 best = (d, old)
         return (best[1], self.cups.pop(best[1])) if best else (None, None)
 
@@ -92,9 +97,8 @@ class ZoneTracker:
             if cup is None:
                 old, cup = self._inherit(tid, center, live, now) if self.ready else (None, None)
                 if cup is None:
-                    cup = {"state": IDLE, "held": 0, "out": 0, "back": 0}
-                else:
-                    cup["held"] = cup["out"] = cup["back"] = 0
+                    cup = {"state": IDLE, "held": 0, "out_since": None, "back_since": None}
+                else:                    # ตัวนับเดิมไว้ครบ — แก้วออกจาก A มา 2 วินาทีแล้วไม่ต้องรอใหม่เพราะ id เปลี่ยน
                     events.append(f"#{tid} รับสถานะต่อจาก #{old}")
                 self.cups[tid] = cup
             cup.update(center=center, size=sz, last_live=now)
@@ -106,23 +110,25 @@ class ZoneTracker:
                 self._set(tid, cup, AT_A, events, "อยู่ที่ A")
             if cup["state"] == AT_A:
                 if in_a:
-                    cup["out"] = 0
+                    cup["out_since"] = None
                     cup["held"] = cup["held"] + 1 if tid in held_ids else 0
                     if cup["held"] >= self.hold_frames:
                         self._set(tid, cup, TRANSIT, events, "ออกเดินทาง (มือจับ)")
                 else:
-                    cup["out"] += 1
-                    if cup["out"] >= self.settle_frames or in_b:
+                    if cup["out_since"] is None:
+                        cup["out_since"] = now
+                    if now - cup["out_since"] >= self.settle_seconds or in_b:
                         self._set(tid, cup, TRANSIT, events, "ออกเดินทาง (ออกจาก A)")
             if cup["state"] == TRANSIT:
                 if in_b:
                     self._set(tid, cup, DONE, events, "ถึง B แล้ว")
                 elif in_a and tid not in held_ids:       # วางคืนที่ A (มือที่กำลังยกอยู่ไม่นับ)
-                    cup["back"] += 1
-                    if cup["back"] >= self.settle_frames:
+                    if cup["back_since"] is None:
+                        cup["back_since"] = now
+                    if now - cup["back_since"] >= self.settle_seconds:
                         self._set(tid, cup, AT_A, events, "กลับมาที่ A")
                 else:
-                    cup["back"] = 0
+                    cup["back_since"] = None
 
         for tid, cup in list(self.cups.items()):         # แก้วที่หายไป: เก็บไว้รอรับ id ใหม่ แล้วค่อยลืม
             if tid in live or cup["state"] == DONE:
