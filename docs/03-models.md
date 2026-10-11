@@ -124,13 +124,13 @@ v1 (`best.pt`) ยังอยู่ที่ GitHub Release `v1` แต่ **�
 
 ### ส่งมอบ
 แอปอ่านโมเดลจาก `app/models/` **เท่านั้น ไม่โหลดจากเน็ต** (แพ็กไปกับเครื่อง/installer) ไฟล์ไม่เก็บใน git —
-วางเองบนทุกเครื่องที่จะรันแอป — **default คือ v1** (`model_name: cup_v1` ใน `config.yaml`):
+วางเองบนทุกเครื่องที่จะรันแอป — **default คือ v2** (`model_name: cup_v2` ใน `config.yaml`) · v1 เป็นตัวสำรองถ้า v2 ตรวจแก้วที่ต้องใช้ไม่ติด (`model_name: cup_v1`):
 ```bash
 # v1 = ไฟล์ใน GitHub Release v1 (sha256 ตรงกับ runs/cup_big/weights/best.pt ที่ใช้วัดผลทุกครั้ง)
 gh release download v1 -R P-PrPas/tkk_workshop -p best.pt -O app/models/cup_v1.pt
 gh release download v1 -R P-PrPas/tkk_workshop -p best.onnx -O app/models/cup_v1.onnx   # เครื่อง CPU ล้วน / mac Intel
 
-# v2 (เลือกใช้: model_name: cup_v2) — คัดลอกจากเครื่องเทรน แล้ว export ONNX ไว้ข้างกัน (imgsz ต้องตรงกับ config.yaml)
+# v2 (default) — คัดลอกจากเครื่องเทรน แล้ว export ONNX ไว้ข้างกัน (imgsz ต้องตรงกับ config.yaml)
 cp runs/cup_big3/weights/best.pt app/models/cup_v2.pt
 .venv-train/bin/yolo export model=app/models/cup_v2.pt format=onnx imgsz=480    # → app/models/cup_v2.onnx
 ```

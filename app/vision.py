@@ -581,7 +581,7 @@ def resolve_model_path(cfg):
     ultralytics ไป pip install กลางเดโม) · ระบุชื่อไฟล์เองใน model_path ก็ได้ ใช้ตามนั้น"""
     if str(cfg["model_path"]).lower() != "auto":
         return cfg["model_path"]
-    name = cfg.get("model_name", "cup_v1")
+    name = cfg.get("model_name", "cup_v2")
     pt, onnx = f"models/{name}.pt", f"models/{name}.onnx"
     on_cpu = pick_device({**cfg, "model_path": pt}) == "cpu"
     if not (on_cpu and (HERE / onnx).exists()):
@@ -605,8 +605,8 @@ def load_model(cfg):
         raise SystemExit(
             f"\nหาไฟล์โมเดลไม่เจอ: {p}\n"
             f"วาง {p.name} (และ .onnx ชื่อเดียวกันสำหรับเครื่อง CPU ล้วน) ไว้ที่ app/models/\n"
-            "v1: gh release download v1 -R P-PrPas/tkk_workshop -p best.pt -O app/models/cup_v1.pt\n"
-            "v2: อยู่ที่เครื่องเทรน runs/cup_big3/weights/best.pt (ตั้ง model_name: cup_v2 ใน config.yaml)\n"
+            "v2: อยู่ที่เครื่องเทรน runs/cup_big3/weights/best.pt (default — model_name: cup_v2 ใน config.yaml)\n"
+            "v1: gh release download v1 -R P-PrPas/tkk_workshop -p best.pt -O app/models/cup_v1.pt (ตั้ง model_name: cup_v1)\n"
             "หรือใช้แผนสำรอง: model_path: yolo11m.pt  +  cup_class: 41  ใน config.yaml\n"
         )
     dev = pick_device(cfg)
