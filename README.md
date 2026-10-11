@@ -317,6 +317,12 @@ Drawing: left-click adds a point · double-click or **Enter** closes the polygon
 camera angle, so they are never reloaded from disk. If a cup's track id changes while a hand covers it, the new id
 inherits its state wherever it reappears (`zone_handoff_*`). The right panel lists each cup's state with a `DONE / total` counter.
 
+Known limits of zone mode — release the cup and move your hand away after putting it in B:
+- `DONE` needs the cup inside B for `zone_settle_seconds`. If the camera sees it only for a frame and a hand then hides it for longer than `zone_handoff_seconds`, it falls back to `IDLE` and is not counted.
+- A cup hidden for longer than `zone_handoff_seconds` loses its state (a slow CPU shrinks that window: the new id is confirmed a few frames after the cup reappears).
+- A cup in A that is hidden while the hand is not detected can hand its `AT A` state to a different cup put down in A within `zone_handoff_seconds` — the two look the same, so this is not separable by rule.
+- Ghost ids (`conf: 0.01`) that sit in B continuously for `zone_settle_seconds` while a cup is in transit can still finish the round; raising `conf` is the mitigation.
+
 ## Troubleshooting
 
 | Symptom | Fix |

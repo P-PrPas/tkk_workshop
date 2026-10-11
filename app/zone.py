@@ -152,6 +152,8 @@ class ZoneTracker:
         for tid, cup in list(self.cups.items()):         # แก้วที่หายไป: เก็บไว้รอรับ id ใหม่ แล้วค่อยลืม
             if tid in live or cup["state"] == DONE:
                 continue
+            if now - cup["last_live"] > self.settle_seconds:   # หายไปนาน = ไม่ต่อเนื่องใน B (กัน tracker คืน id เดิมของผี)
+                cup["in_b_since"] = None
             if cup["state"] == IDLE or now - cup["last_live"] > self.handoff_seconds:
                 del self.cups[tid]
         return events
