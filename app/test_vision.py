@@ -413,6 +413,25 @@ def test_zone_ghost_in_b_cannot_finish_a_transit():
     assert zstep(z, 4.0, {12: 90})[1] == {12: DONE} and z.counts() == (1, 1)
 
 
+def test_zone_returning_ghost_id_restarts_the_b_timer():
+    """ghost โผล่ใน B เฟรมเดียว หายไปนาน แล้ว ByteTrack คืน id เดิมให้ (เก็บ track ที่หายไว้ได้ 30 เฟรม) —
+    เวลาที่หายไปไม่นับเป็น "อยู่ใน B ต่อเนื่อง" ต้องเริ่มนับใหม่ ไม่งั้นขึ้น DONE ทันทีและค้างจนกด reset"""
+    z = ZoneTracker(hold_seconds=0, settle_seconds=0.5, handoff_seconds=3.0)
+    z.set_zones(ZA, ZB)
+    zstep(z, 0, {1: 10}); zstep(z, 1, {1: 10}, held={1}); zstep(z, 2, {1: 30}, held={1})   # TRANSIT แล้วถูกบัง
+    assert zstep(z, 2.5, {9: 95})[1] == {9: TRANSIT}           # ghost เฟรมเดียวใน B รับสถานะต่อ
+    for t in (2.75, 3.0, 3.25):                                # มีเฟรมว่างคั่นกลาง (ไม่เห็นอะไรเลย)
+        assert zstep(z, t, {})[1] == {9: TRANSIT}
+    assert zstep(z, 3.5, {9: 95})[1] == {9: TRANSIT}           # id เดิมกลับมา — ต้องไม่ DONE ทันที
+    assert zstep(z, 3.75, {9: 95})[1] == {9: TRANSIT}
+    assert zstep(z, 4.0, {9: 95})[1] == {9: DONE}              # อยู่ใน B ต่อเนื่องครบ 0.5 วิหลังกลับมา
+    z2 = ZoneTracker(hold_seconds=0, settle_seconds=0.5)       # ช้า 1 FPS ที่เห็นแก้วทุกเฟรม ต้องยังขึ้น DONE ได้
+    z2.set_zones(ZA, ZB)
+    zstep(z2, 0, {1: 10}); zstep(z2, 1, {1: 10}, held={1})
+    assert zstep(z2, 2, {1: 90})[1] == {1: TRANSIT}
+    assert zstep(z2, 3, {1: 90})[1] == {1: DONE}
+
+
 def test_zone_brief_touch_of_b_is_not_done():
     z = ZoneTracker(hold_seconds=0, settle_seconds=1.0)
     z.set_zones(ZA, ZB)
@@ -507,6 +526,7 @@ if __name__ == "__main__":
     test_zone_id_handoff()
     test_zone_handoff_far_return()
     test_zone_ghost_in_b_cannot_finish_a_transit()
+    test_zone_returning_ghost_id_restarts_the_b_timer()
     test_zone_brief_touch_of_b_is_not_done()
     test_zone_new_cup_in_a_cannot_take_transit()
     test_zone_hold_is_time_not_frames()
