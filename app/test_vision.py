@@ -289,7 +289,7 @@ def test_zone_brush_past_does_not_trigger():
 
 
 def test_zone_leave_without_hand_is_safety_net():
-    z = ZoneTracker(settle_frames=4)
+    z = ZoneTracker(settle_seconds=3.0)
     z.set_zones(ZA, ZB)
     zstep(z, 0, {1: 10})
     for t in range(1, 4):                                     # ออกจาก A ไม่ถึง 4 เฟรมติดกัน
@@ -299,7 +299,7 @@ def test_zone_leave_without_hand_is_safety_net():
 
 
 def test_zone_transit_persists_when_released_and_returns_to_a():
-    z = ZoneTracker(hold_frames=1, settle_frames=3)
+    z = ZoneTracker(hold_frames=1, settle_seconds=2.0)
     z.set_zones(ZA, ZB)
     zstep(z, 0, {1: 10})
     zstep(z, 1, {1: 10}, held={1})                            # → TRANSIT (ยังไม่ทันออกจาก A)
@@ -322,23 +322,68 @@ def test_zone_id_handoff():
     assert zstep(z, 4, {5: 85})[1] == {5: DONE}
 
 
-def test_zone_handoff_limits():
+def test_zone_handoff_far_return():
+    """แก้วหายตอนมือบังระหว่างยก แล้วโผล่ไกลกว่า handoff_dist × ด้านยาวกล่อง — ต้องรับสถานะต่อ
+    ไม่ใช่เริ่มเป็น IDLE (IDLE ไปต่อไม่ได้ถ้าไม่กลับเข้า A) · ระยะใช้แค่เลือกใบที่ใกล้สุด"""
     z = ZoneTracker(hold_frames=1, handoff_seconds=3.0, handoff_dist=1.5)
     z.set_zones(ZA, ZB)
     zstep(z, 0, {1: 10})
-    zstep(z, 1, {1: 10}, held={1})
-    assert zstep(z, 2, {9: 90})[1][9] == IDLE                  # ไกลเกิน ไม่รับต่อ (id 1 ยังรอ id ใหม่อยู่)
-    z2 = ZoneTracker(hold_frames=1, handoff_seconds=3.0)
+    zstep(z, 1, {1: 10}, held={1})                             # TRANSIT
+    zstep(z, 2, {1: 30}, held={1})                             # เห็นครั้งสุดท้ายที่ x=30 (ด้านยาว 20)
+    ev, st = zstep(z, 4, {7: 95})                              # หาย 2 วิ → โผล่ที่ B ห่าง 65px = 3.25 เท่า > 1.5
+    assert st == {7: DONE} and z.counts() == (1, 1), (st, z.counts())
+    assert ev == ["#7 รับสถานะต่อจาก #1", "#7 ถึง B แล้ว"], ev
+    z2 = ZoneTracker(hold_frames=1, handoff_seconds=3.0, handoff_dist=1.5)
     z2.set_zones(ZA, ZB)
     zstep(z2, 0, {1: 10})
     zstep(z2, 1, {1: 10}, held={1})
-    assert zstep(z2, 6, {5: 12})[1] == {5: AT_A}              # เกินเวลา 3 วิ ไม่รับต่อ (และ id 1 ถูกลืม)
+    zstep(z2, 2, {1: 30}, held={1})
+    assert zstep(z2, 4, {7: 55})[1] == {7: TRANSIT}           # โผล่กลางโต๊ะไกลเกินรัศมีเดิม ก็ยังเป็น TRANSIT
+
+
+def test_zone_handoff_limits():
+    z = ZoneTracker(hold_frames=1, handoff_seconds=3.0)
+    z.set_zones(ZA, ZB)
+    zstep(z, 0, {1: 10})
+    zstep(z, 1, {1: 10}, held={1})
+    assert zstep(z, 6, {5: 12})[1] == {5: AT_A}               # เกินเวลา 3 วิ ไม่รับต่อ (id 1 ถูกลืม) → เริ่มใหม่
     z3 = ZoneTracker(hold_frames=1)
     z3.set_zones(ZA, ZB)
     zstep(z3, 0, {1: 10, 2: 25})
     zstep(z3, 1, {1: 10, 2: 25}, held={1, 2})
     st = zstep(z3, 2, {7: 24})[1]                              # สองใบหาย → ใบใหม่รับต่อจากใบที่ใกล้กว่า
     assert st[7] == TRANSIT and 2 not in st and 1 in st
+    # DONE นับไปแล้วและคงอยู่เอง — id ใหม่ไกล ๆ ไม่ควรไปแย่งสถานะ DONE · ใกล้ ๆ ค่อยรับต่อ (กันแถวซ้ำ)
+    z4 = ZoneTracker(hold_frames=1, handoff_seconds=3.0, handoff_dist=1.5)
+    z4.set_zones(ZA, ZB)
+    zstep(z4, 0, {1: 10})
+    zstep(z4, 1, {1: 10}, held={1})
+    zstep(z4, 2, {1: 85})                                      # DONE
+    assert zstep(z4, 3, {9: 50})[1] == {1: DONE, 9: IDLE}
+    assert zstep(z4, 4, {9: 50, 8: 80})[1] == {8: DONE, 9: IDLE}
+
+
+def test_zone_handoff_keeps_settle_progress():
+    """handoff ไม่ล้างตัวนับ — แก้วที่ออกจาก A มาแล้ว 2 วิไม่ควรต้องรอใหม่หมดเพราะ id เปลี่ยน"""
+    z = ZoneTracker(hold_frames=99, settle_seconds=3.0, handoff_seconds=5.0)
+    z.set_zones(ZA, ZB)
+    zstep(z, 0, {1: 10})                                       # AT_A
+    zstep(z, 1, {1: 50})                                       # เริ่มอยู่นอก A ตั้งแต่ t=1
+    assert zstep(z, 3, {5: 50})[1] == {5: AT_A}               # id ใหม่ที่ t=3 (รอมา 2 วิ)
+    assert zstep(z, 4, {5: 50})[1] == {5: TRANSIT}            # ครบ 3 วิตั้งแต่ t=1 — ไม่ใช่นับใหม่จาก t=3
+
+
+def test_zone_settle_is_time_not_frames():
+    """ตาข่ายนิรภัยนับเป็นวินาที: เฟรมถี่ (GPU) กับเฟรมห่าง (CPU) ต้องเปลี่ยนสถานะที่เวลาเดียวกัน"""
+    for step in (0.05, 0.5):                                   # 20 FPS กับ 2 FPS
+        z = ZoneTracker(settle_seconds=1.0)
+        z.set_zones(ZA, ZB)
+        zstep(z, 0.0, {1: 10})
+        t, state = 0.0, AT_A
+        while state == AT_A and t < 5:
+            t += step
+            state = zstep(z, t, {1: 50})[1][1]
+        assert state == TRANSIT and abs(t - 1.0) <= step + 1e-9, (step, t)
 
 
 def test_zone_multiple_cups_independent_and_counts():
@@ -368,7 +413,10 @@ if __name__ == "__main__":
     test_zone_leave_without_hand_is_safety_net()
     test_zone_transit_persists_when_released_and_returns_to_a()
     test_zone_id_handoff()
+    test_zone_handoff_far_return()
     test_zone_handoff_limits()
+    test_zone_handoff_keeps_settle_progress()
+    test_zone_settle_is_time_not_frames()
     test_zone_multiple_cups_independent_and_counts()
     test_zone_redraw_resets_states()
     test_hand_matching_uses_valid_candidates()

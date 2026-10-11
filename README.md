@@ -241,7 +241,7 @@ Every button in the sidebar has a keyboard shortcut:
 | `S` | Save a still (`shot_<timestamp>.png`, camera view only) |
 | `D` | Toggle debug overlay (hand points-in-box count) |
 | `F` | Toggle fullscreen ↔ windowed |
-| `Q` / `Esc` / close window | Quit (`Esc` while drawing a zone clears the polygon instead) |
+| `Q` / `Esc` / close window | Quit — in zone mode `Esc` clears the polygon being drawn, then leaves zone mode; it never quits there (`Q` does) |
 
 The window is freely resizable — drag any edge; the video is letterboxed to fit.
 
@@ -273,9 +273,9 @@ during an event.**
 | `hand_grace_seconds` | `0.4` | Freeze progress briefly when a hand disappears, then decay it. Invisible time never adds progress |
 | `trail_length` | `60` | Points kept in each cup’s motion trail — `0` disables trails |
 | `forget_seconds` | `4` | An *uninspected* cup gone this long drops off the checklist; inspected ones stay until reset |
-| `zone_settle_frames` | `6` | Zone mode: frames a cup must stay out of A (no hand seen) / back in A before its state changes |
-| `zone_handoff_seconds` | `3.0` | Zone mode: a lost track id's state passes to a new id appearing within this time … |
-| `zone_handoff_dist` | `1.5` | … and within this many cup-lengths of where it vanished |
+| `zone_settle_seconds` | `0.5` | Zone mode: seconds a cup must stay out of A (no hand seen) / back in A before its state changes — time, not frames, so CPU and GPU behave alike |
+| `zone_handoff_seconds` | `3.0` | Zone mode: when a track id is lost (hand over the cup) the nearest new id appearing within this time takes over its `AT A` / `IN TRANSIT` state — no distance limit, a hand can carry a cup across the table in that time |
+| `zone_handoff_dist` | `1.5` | Zone mode, `DONE` cups only (already counted): a new id must be within this many cup-lengths to take over |
 
 ### Choosing a compute device (CUDA / MPS / CPU)
 
@@ -299,14 +299,14 @@ in the A → B journey.
 | --- | --- | --- |
 | `IDLE` | grey | never been in A (lying anywhere else, or started in B) |
 | `AT A` | violet | the cup's box centre is inside A |
-| `IN TRANSIT` | amber | left A — a hand gripped it in A (`hold_frames`), or it stayed out of A for `zone_settle_frames`. Stays amber even if put down mid-way; back in A (no hand) → `AT A` |
+| `IN TRANSIT` | amber | left A — a hand gripped it in A (`hold_frames`), or it stayed out of A for `zone_settle_seconds`. Stays amber even if put down mid-way; back in A (no hand) → `AT A` |
 | `DONE` | green | entered B while in transit. Stays until **R** (new round) |
 
 Drawing: left-click adds a point · double-click or **Enter** closes the polygon (≥ 3 points) · right-click or
-**Backspace** undoes a point · **Esc** clears the polygon being drawn (Esc again leaves zone mode) ·
+**Backspace** undoes a point · **Esc** clears the polygon being drawn, and once zones are drawn it just leaves zone mode (it never quits the app in zone mode — `Q` does) ·
 **X** redraws both. B may not overlap A. Zones are remembered for the session only — a new venue means a new
 camera angle, so they are never reloaded from disk. If a cup's track id changes while a hand covers it, the new id
-inherits its state (`zone_handoff_*`). The right panel lists each cup's state with a `DONE / total` counter.
+inherits its state wherever it reappears (`zone_handoff_*`). The right panel lists each cup's state with a `DONE / total` counter.
 
 ## Troubleshooting
 

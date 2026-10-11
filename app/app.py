@@ -516,8 +516,8 @@ class Station(QWidget):
         self.head = Header()
         self.foot = Footer()
 
-        new_round = Button("เริ่มรอบตรวจใหม่", "R", primary=True)
-        new_round.clicked.connect(self.reset)
+        self.new_round = Button("เริ่มรอบตรวจใหม่", "R", primary=True)
+        self.new_round.clicked.connect(self.reset)
         self.cam_btn = Button("เลือกกล้อง", "C")
         self.cam_btn.clicked.connect(self.pick_camera)
         self.mode = "inspect"                       # inspect = เช็กลิสต์ตรวจแก้ว · zone = ย้ายแก้ว A → B
@@ -606,7 +606,7 @@ class Station(QWidget):
             row.addWidget(spin)
             keys.addLayout(row)
             self.hand_conf_inputs[key] = spin
-        keys.addWidget(new_round)
+        keys.addWidget(self.new_round)
         cam_row = QHBoxLayout()                     # กล้อง · โหมด (· วาดใหม่ เฉพาะโหมด zone) อยู่แถวเดียว —
         cam_row.setSpacing(8)                       # แถวใหม่จะกิน 44px จากรายการชิ้นงาน (Rack) จนแถวหาย
         cam_row.addWidget(self.cam_btn, 5)
@@ -671,13 +671,14 @@ class Station(QWidget):
 
     def reset(self):
         self.an.reset()
-        self.flash("เริ่มรอบตรวจใหม่แล้ว")
+        self.flash("เริ่มรอบ Zone ใหม่แล้ว" if self.mode == "zone" else "เริ่มรอบตรวจใหม่แล้ว")
 
     # ── โหมด zone: สลับโหมด + วาดกรอบ A/B (จำเฉพาะ session นี้ ไม่บันทึกลงไฟล์) ──
     def toggle_mode(self):
         if self.mode == "inspect":
             self.mode = "zone"
             self.mode_btn.set_label("โหมด: Zone")
+            self.new_round.set_label("เริ่มรอบ Zone ใหม่")
             self.redraw_btn.show()
             self.an.set_mode("zone")
             if not all(self.view.zones.values()):
@@ -686,6 +687,7 @@ class Station(QWidget):
             self.mode = "inspect"
             self.view.stage, self.view.pts = None, []
             self.mode_btn.set_label("โหมด: ตรวจ")
+            self.new_round.set_label("เริ่มรอบตรวจใหม่")
             self.redraw_btn.hide()
             self.an.set_mode("inspect")
 
@@ -785,6 +787,8 @@ class Station(QWidget):
             self.toggle_mode()
         elif k == Qt.Key.Key_X and self.mode == "zone":
             self.start_drawing()
+        elif k == Qt.Key.Key_Escape and self.mode == "zone":   # วาดเสร็จแล้ว: Esc แค่ออกจากโหมด ไม่ปิดแอปกลางเดโม (Q ยังปิด)
+            self.toggle_mode()
         elif k in (Qt.Key.Key_Q, Qt.Key.Key_Escape):
             self.close()
         elif k == Qt.Key.Key_R:
