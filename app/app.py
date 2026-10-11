@@ -24,7 +24,7 @@ try:
     from PySide6.QtCore import Qt, QPoint, QRectF, QTimer, QVariantAnimation, QPointF
     from PySide6.QtGui import (QColor, QFont, QFontMetrics, QImage, QPainter,
                                QPalette, QPen, QPixmap, QPolygonF)
-    from PySide6.QtWidgets import (QAbstractButton, QApplication, QDoubleSpinBox, QLabel, QHBoxLayout,
+    from PySide6.QtWidgets import (QAbstractButton, QApplication, QDialog, QDoubleSpinBox, QLabel, QHBoxLayout,
                                    QMenu, QScrollArea, QVBoxLayout, QWidget)
 except ImportError:
     raise SystemExit("\nไม่มี PySide6 — ติดตั้งก่อน:  pip install -r app/requirements.txt\n")
@@ -534,6 +534,19 @@ class Station(QWidget):
         keys = QVBoxLayout()
         keys.setContentsMargins(22, 0, 22, 20)
         keys.setSpacing(8)
+        # ค่า threshold ทั้งหมดอยู่ในหน้าต่างลอยแยก (ปุ่ม "ตั้งค่า" / คีย์ T) — แผงข้างจะได้ไม่รก
+        self.settings = QDialog(self)
+        self.settings.setWindowTitle("ตั้งค่า · threshold")
+        self.settings.setWindowFlag(Qt.WindowType.Tool)      # ลอยเหนือหน้าต่างหลัก ไม่ขึ้นแถบงาน · ไม่บล็อกหน้าหลัก
+        self.settings.setFixedWidth(380)
+        ground(self.settings, PANEL)
+        form = QVBoxLayout(self.settings)
+        form.setContentsMargins(22, 18, 22, 18)
+        form.setSpacing(10)
+        hint = QLabel("มีผลทันทีระหว่างรัน · ไม่บันทึกลง config.yaml")
+        hint.setFont(face(11))
+        hint.setStyleSheet(f"color: {FAINT}")
+        form.addWidget(hint)
         conf_row = QHBoxLayout()
         conf_label = QLabel("เกณฑ์ conf · cup")
         conf_label.setFont(face(12, QFont.Weight.DemiBold))
@@ -556,7 +569,7 @@ class Station(QWidget):
         conf_label.setBuddy(self.conf_input)
         conf_row.addWidget(conf_label, 1)
         conf_row.addWidget(self.conf_input)
-        keys.addLayout(conf_row)
+        form.addLayout(conf_row)
         duration_row = QHBoxLayout()
         duration_label = QLabel("เวลาถือก่อนตรวจแล้ว")
         duration_label.setFont(face(12, QFont.Weight.DemiBold))
@@ -577,7 +590,7 @@ class Station(QWidget):
         duration_label.setBuddy(self.duration_input)
         duration_row.addWidget(duration_label, 1)
         duration_row.addWidget(self.duration_input)
-        keys.addLayout(duration_row)
+        form.addLayout(duration_row)
         self.hand_conf_inputs = {}
         self.hand_conf_timer = QTimer(self)
         self.hand_conf_timer.setSingleShot(True)
@@ -607,9 +620,12 @@ class Station(QWidget):
             title.setBuddy(spin)
             row.addWidget(title, 1)
             row.addWidget(spin)
-            keys.addLayout(row)
+            form.addLayout(row)
             self.hand_conf_inputs[key] = spin
         keys.addWidget(self.new_round)
+        self.settings_btn = Button("ตั้งค่า", "T")
+        self.settings_btn.clicked.connect(self.toggle_settings)
+        keys.addWidget(self.settings_btn)
         cam_row = QHBoxLayout()                     # กล้อง · โหมด (· วาดใหม่ เฉพาะโหมด zone) อยู่แถวเดียว —
         cam_row.setSpacing(8)                       # แถวใหม่จะกิน 44px จากรายการชิ้นงาน (Rack) จนแถวหาย
         cam_row.addWidget(self.cam_btn, 5)
@@ -675,6 +691,16 @@ class Station(QWidget):
     def reset(self):
         self.an.reset()
         self.flash("เริ่มรอบ Zone ใหม่แล้ว" if self.mode == "zone" else "เริ่มรอบตรวจใหม่แล้ว")
+
+    def toggle_settings(self):
+        if self.settings.isVisible():
+            self.settings.hide()
+            return
+        self.settings.adjustSize()
+        # วางที่มุมขวาบนของพื้นที่ภาพ ติดแผงข้าง — ไม่บังเช็กลิสต์ และใกล้ปุ่มที่เพิ่งกด
+        corner = self.view.mapToGlobal(QPoint(self.view.width() - self.settings.width() - 12, 12))
+        self.settings.move(corner)
+        self.settings.show()
 
     # ── โหมด zone: สลับโหมด + วาดกรอบ A/B (จำเฉพาะ session นี้ ไม่บันทึกลงไฟล์) ──
     def toggle_mode(self):
@@ -786,6 +812,8 @@ class Station(QWidget):
                 self.view.pts = []
             else:
                 self.toggle_mode()
+        elif k == Qt.Key.Key_T:
+            self.toggle_settings()
         elif k == Qt.Key.Key_Z:
             self.toggle_mode()
         elif k == Qt.Key.Key_X and self.mode == "zone":
