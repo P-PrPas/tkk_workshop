@@ -336,7 +336,7 @@ class Analyzer:
         self.insp = Inspection(cfg.get("pick_frames", 8), cfg.get("trail_length", 60),
                                cfg.get("forget_seconds", 4.0), seconds=cfg.get("pick_seconds", 1.0),
                                grace_seconds=cfg.get("hand_grace_seconds", 0.4))
-        self.zone = ZoneTracker(cfg.get("hold_frames", 3), cfg.get("zone_settle_seconds", 0.5),
+        self.zone = ZoneTracker(cfg.get("zone_hold_seconds", 0.2), cfg.get("zone_settle_seconds", 0.5),
                                 cfg.get("zone_handoff_seconds", 3.0), cfg.get("zone_handoff_dist", 1.5))
         self.mode = "inspect"        # inspect = เช็กลิสต์ตรวจแก้ว (เดิม) · zone = ย้ายแก้ว A → B
         self.lock = threading.Lock()
