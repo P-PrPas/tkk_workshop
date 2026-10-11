@@ -276,13 +276,14 @@ during an event.**
 | `grip_min_points` | `10` | Hand landmarks (of 21) that must fall inside the cup box |
 | `grip_box_margin` | `0.35` | Cup box is expanded by this fraction before counting points |
 | `grip_max_size_ratio` | `4.0` | Max hand/cup size ratio — rejects a hand pointing from far away |
-| `hold_frames` / `release_frames` | `3` / `6` | Hysteresis: frames to latch `HOLDING` on / off (off > on = no flicker). In zone mode `hold_frames` is also how long a hand must grip a cup in A |
+| `hold_frames` / `release_frames` | `3` / `6` | Hysteresis: frames to latch `HOLDING` on / off (off > on = no flicker) |
 | `pick_seconds` | `1.0` | Accumulated holding time before inspection completes; adjustable in the right panel. Green fill inside each box shows progress |
 | `hand_grace_seconds` | `0.4` | Freeze progress briefly when a hand disappears, then decay it. Invisible time never adds progress |
 | `trail_length` | `60` | Points kept in each cup’s motion trail — `0` disables trails |
 | `forget_seconds` | `4` | An *uninspected* cup gone this long drops off the checklist; inspected ones stay until reset |
-| `zone_settle_seconds` | `0.5` | Zone mode: seconds a cup must stay out of A (no hand seen) / back in A before its state changes — time, not frames, so CPU and GPU behave alike |
-| `zone_handoff_seconds` | `3.0` | Zone mode: when a track id is lost (hand over the cup) the nearest new id appearing within this time takes over its `AT A` / `IN TRANSIT` state — no distance limit, a hand can carry a cup across the table in that time |
+| `zone_hold_seconds` | `0.2` | Zone mode: seconds a hand must keep gripping a cup in A before it goes `IN TRANSIT` (a hand brushing past does not count) |
+| `zone_settle_seconds` | `0.5` | Zone mode: seconds a cup must stay out of A (no hand seen) / back in A / inside B before its state changes — time, not frames, so CPU and GPU behave alike. Staying in B is what makes it `DONE`, so a ghost id flashing in B cannot finish the round |
+| `zone_handoff_seconds` | `3.0` | Zone mode: when a track id is lost (hand over the cup) the nearest new id appearing within this time takes over its `AT A` / `IN TRANSIT` state — no distance limit (but an id that appears inside A cannot take `IN TRANSIT`: a cup just put down in A is a new cup), a hand can carry a cup across the table in that time |
 | `zone_handoff_dist` | `1.5` | Zone mode, `DONE` cups only (already counted): a new id must be within this many cup-lengths to take over |
 
 ### Choosing a compute device (CUDA / MPS / CPU)
@@ -307,8 +308,8 @@ in the A → B journey.
 | --- | --- | --- |
 | `IDLE` | grey | never been in A (lying anywhere else, or started in B) |
 | `AT A` | violet | the cup's box centre is inside A |
-| `IN TRANSIT` | amber | left A — a hand gripped it in A (`hold_frames`), or it stayed out of A for `zone_settle_seconds`. Stays amber even if put down mid-way; back in A (no hand) → `AT A` |
-| `DONE` | green | entered B while in transit. Stays until **R** (new round) |
+| `IN TRANSIT` | amber | left A — a hand gripped it in A for `zone_hold_seconds`, or it stayed out of A for `zone_settle_seconds`. Stays amber even if put down mid-way; back in A (no hand) → `AT A` |
+| `DONE` | green | stayed inside B for `zone_settle_seconds` while in transit (touching B's edge or one flickering frame is not enough). Stays until **R** (new round) |
 
 Drawing: left-click adds a point · double-click or **Enter** closes the polygon (≥ 3 points) · right-click or
 **Backspace** undoes a point · **Esc** clears the polygon being drawn, and once zones are drawn it just leaves zone mode (it never quits the app in zone mode — `Q` does) ·

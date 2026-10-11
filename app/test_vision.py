@@ -266,24 +266,25 @@ def test_zone_idle_until_in_a_and_not_ready():
 
 
 def test_zone_full_path_with_hand():
-    z = ZoneTracker(hold_frames=3)
+    z = ZoneTracker(hold_seconds=2.0, settle_seconds=1.0)
     z.set_zones(ZA, ZB)
     zstep(z, 0, {1: 10})
-    for t in (1, 2):                                          # จับยังไม่ครบ 3 เฟรม
+    for t in (1, 2):                                          # จับมายังไม่ครบ 2 วินาที
         assert zstep(z, t, {1: 10}, held={1})[1] == {1: AT_A}
     assert zstep(z, 3, {1: 10}, held={1})[1] == {1: TRANSIT}
     for t, x in enumerate((30, 50, 60), 4):                   # คงสีข้ามพื้นที่นอก zone
         assert zstep(z, t, {1: x}, held={1})[1] == {1: TRANSIT}
-    ev, st = zstep(z, 8, {1: 85})
+    assert zstep(z, 8, {1: 85})[1] == {1: TRANSIT}            # แตะ B แล้ว ยังไม่ DONE — ต้องอยู่ต่อเนื่อง 1 วิ
+    ev, st = zstep(z, 9, {1: 85})
     assert st == {1: DONE} and ev == ["#1 ถึง B แล้ว"]
-    assert zstep(z, 9, {1: 50})[1] == {1: DONE}               # สำเร็จแล้วคงอยู่
+    assert zstep(z, 10, {1: 50})[1] == {1: DONE}              # สำเร็จแล้วคงอยู่
     assert z.counts() == (1, 1)
     z.reset()
     assert z.rows() == [] and z.ready                          # reset ล้างสถานะ คง zone
 
 
 def test_zone_brush_past_does_not_trigger():
-    z = ZoneTracker(hold_frames=3)
+    z = ZoneTracker(hold_seconds=2.0)
     z.set_zones(ZA, ZB)
     zstep(z, 0, {1: 10})
     for t, held in enumerate(({1}, {1}, set(), {1}, {1}), 1):  # จับไม่ติดกัน 3 เฟรม
@@ -298,11 +299,13 @@ def test_zone_leave_without_hand_is_safety_net():
     for t in range(1, 4):                                     # ออกจาก A ไม่ถึง 4 เฟรมติดกัน
         assert zstep(z, t, {1: 50})[1] == {1: AT_A}
     assert zstep(z, 4, {1: 50})[1] == {1: TRANSIT}            # ไม่มีมือเลยก็ถือว่าถูกย้าย
-    assert zstep(z, 5, {1: 85})[1] == {1: DONE}
+    assert zstep(z, 5, {1: 85})[1] == {1: TRANSIT}            # ถึง B แล้วต้องอยู่ต่อเนื่อง 3 วิ (settle_seconds)
+    assert zstep(z, 7, {1: 85})[1] == {1: TRANSIT}
+    assert zstep(z, 8, {1: 85})[1] == {1: DONE}
 
 
 def test_zone_transit_persists_when_released_and_returns_to_a():
-    z = ZoneTracker(hold_frames=1, settle_seconds=2.0)
+    z = ZoneTracker(hold_seconds=0, settle_seconds=2.0)
     z.set_zones(ZA, ZB)
     zstep(z, 0, {1: 10})
     zstep(z, 1, {1: 10}, held={1})                            # → TRANSIT (ยังไม่ทันออกจาก A)
@@ -315,28 +318,31 @@ def test_zone_transit_persists_when_released_and_returns_to_a():
 
 
 def test_zone_id_handoff():
-    z = ZoneTracker(hold_frames=1, handoff_seconds=3.0)
+    z = ZoneTracker(hold_seconds=0, handoff_seconds=3.0)
     z.set_zones(ZA, ZB)
     zstep(z, 0, {1: 10})
     zstep(z, 1, {1: 10}, held={1})
     zstep(z, 2, {1: 45}, held={1})                            # TRANSIT, ถูกมือบังจน id 1 หาย
     ev, st = zstep(z, 3, {5: 48})                              # id 5 โผล่ใกล้ตำแหน่งสุดท้าย
     assert st == {5: TRANSIT} and ev == ["#5 รับสถานะต่อจาก #1"]
-    assert zstep(z, 4, {5: 85})[1] == {5: DONE}
+    assert zstep(z, 4, {5: 85})[1] == {5: TRANSIT}            # แตะ B
+    assert zstep(z, 5, {5: 85})[1] == {5: DONE}               # อยู่ครบ 0.5 วิ (settle_seconds ปริยาย)
 
 
 def test_zone_handoff_far_return():
     """แก้วหายตอนมือบังระหว่างยก แล้วโผล่ไกลกว่า handoff_dist × ด้านยาวกล่อง — ต้องรับสถานะต่อ
     ไม่ใช่เริ่มเป็น IDLE (IDLE ไปต่อไม่ได้ถ้าไม่กลับเข้า A) · ระยะใช้แค่เลือกใบที่ใกล้สุด"""
-    z = ZoneTracker(hold_frames=1, handoff_seconds=3.0, handoff_dist=1.5)
+    z = ZoneTracker(hold_seconds=0, handoff_seconds=3.0, handoff_dist=1.5)
     z.set_zones(ZA, ZB)
     zstep(z, 0, {1: 10})
     zstep(z, 1, {1: 10}, held={1})                             # TRANSIT
     zstep(z, 2, {1: 30}, held={1})                             # เห็นครั้งสุดท้ายที่ x=30 (ด้านยาว 20)
     ev, st = zstep(z, 4, {7: 95})                              # หาย 2 วิ → โผล่ที่ B ห่าง 65px = 3.25 เท่า > 1.5
+    assert st == {7: TRANSIT} and ev == ["#7 รับสถานะต่อจาก #1"], (st, ev)
+    ev, st = zstep(z, 5, {7: 95})                              # อยู่ใน B ต่อเนื่องครบ 0.5 วิ
     assert st == {7: DONE} and z.counts() == (1, 1), (st, z.counts())
-    assert ev == ["#7 รับสถานะต่อจาก #1", "#7 ถึง B แล้ว"], ev
-    z2 = ZoneTracker(hold_frames=1, handoff_seconds=3.0, handoff_dist=1.5)
+    assert ev == ["#7 ถึง B แล้ว"], ev
+    z2 = ZoneTracker(hold_seconds=0, handoff_seconds=3.0, handoff_dist=1.5)
     z2.set_zones(ZA, ZB)
     zstep(z2, 0, {1: 10})
     zstep(z2, 1, {1: 10}, held={1})
@@ -345,30 +351,32 @@ def test_zone_handoff_far_return():
 
 
 def test_zone_handoff_limits():
-    z = ZoneTracker(hold_frames=1, handoff_seconds=3.0)
+    z = ZoneTracker(hold_seconds=0, handoff_seconds=3.0)
     z.set_zones(ZA, ZB)
     zstep(z, 0, {1: 10})
     zstep(z, 1, {1: 10}, held={1})
     assert zstep(z, 6, {5: 12})[1] == {5: AT_A}               # เกินเวลา 3 วิ ไม่รับต่อ (id 1 ถูกลืม) → เริ่มใหม่
-    z3 = ZoneTracker(hold_frames=1)
+    z3 = ZoneTracker(hold_seconds=0)
     z3.set_zones(ZA, ZB)
     zstep(z3, 0, {1: 10, 2: 25})
-    zstep(z3, 1, {1: 10, 2: 25}, held={1, 2})
-    st = zstep(z3, 2, {7: 24})[1]                              # สองใบหาย → ใบใหม่รับต่อจากใบที่ใกล้กว่า
-    assert st[7] == TRANSIT and 2 not in st and 1 in st
+    zstep(z3, 1, {1: 10, 2: 25}, held={1, 2})                  # ทั้งสองใบ TRANSIT
+    zstep(z3, 2, {1: 40, 2: 55}, held={1, 2})                  # ถูกยกออกนอก A (ยังไม่ถึง B)
+    st = zstep(z3, 3, {7: 54})[1]                              # สองใบหาย → ใบใหม่รับต่อจากใบที่ใกล้กว่า (#2)
+    assert st[7] == TRANSIT and 2 not in st and 1 in st, st
     # DONE นับไปแล้วและคงอยู่เอง — id ใหม่ไกล ๆ ไม่ควรไปแย่งสถานะ DONE · ใกล้ ๆ ค่อยรับต่อ (กันแถวซ้ำ)
-    z4 = ZoneTracker(hold_frames=1, handoff_seconds=3.0, handoff_dist=1.5)
+    z4 = ZoneTracker(hold_seconds=0, handoff_seconds=3.0, handoff_dist=1.5)
     z4.set_zones(ZA, ZB)
     zstep(z4, 0, {1: 10})
     zstep(z4, 1, {1: 10}, held={1})
-    zstep(z4, 2, {1: 85})                                      # DONE
-    assert zstep(z4, 3, {9: 50})[1] == {1: DONE, 9: IDLE}
-    assert zstep(z4, 4, {9: 50, 8: 80})[1] == {8: DONE, 9: IDLE}
+    zstep(z4, 2, {1: 85})
+    assert zstep(z4, 3, {1: 85})[1] == {1: DONE}               # DONE (อยู่ใน B ครบ 0.5 วิ)
+    assert zstep(z4, 4, {9: 50})[1] == {1: DONE, 9: IDLE}
+    assert zstep(z4, 5, {9: 50, 8: 80})[1] == {8: DONE, 9: IDLE}
 
 
 def test_zone_handoff_keeps_settle_progress():
     """handoff ไม่ล้างตัวนับ — แก้วที่ออกจาก A มาแล้ว 2 วิไม่ควรต้องรอใหม่หมดเพราะ id เปลี่ยน"""
-    z = ZoneTracker(hold_frames=99, settle_seconds=3.0, handoff_seconds=5.0)
+    z = ZoneTracker(hold_seconds=99, settle_seconds=3.0, handoff_seconds=5.0)
     z.set_zones(ZA, ZB)
     zstep(z, 0, {1: 10})                                       # AT_A
     zstep(z, 1, {1: 50})                                       # เริ่มอยู่นอก A ตั้งแต่ t=1
@@ -389,18 +397,78 @@ def test_zone_settle_is_time_not_frames():
         assert state == TRANSIT and abs(t - 1.0) <= step + 1e-9, (step, t)
 
 
+def test_zone_ghost_in_b_cannot_finish_a_transit():
+    """แก้วจริง TRANSIT ถูกมือบังจนหาย แล้วมี ghost id โผล่ใน B แค่เฟรมเดียว — ghost รับสถานะต่อได้
+    แต่ต้องไม่กลายเป็น DONE (เคยค้างถาวรจนกด reset) · แก้วจริงที่โผล่ตามมารับต่อแล้วค่อย DONE"""
+    z = ZoneTracker(hold_seconds=0, settle_seconds=0.5, handoff_seconds=3.0)
+    z.set_zones(ZA, ZB)
+    zstep(z, 0, {1: 10}); zstep(z, 1, {1: 10}, held={1})       # TRANSIT
+    zstep(z, 2, {1: 30}, held={1})                             # แล้วถูกบัง
+    _, st = zstep(z, 2.5, {9: 95})                              # ghost เฟรมเดียวใน B
+    assert st == {9: TRANSIT} and z.counts() == (0, 1), (st, z.counts())
+    assert zstep(z, 3, {})[1] == {9: TRANSIT}                  # ghost หาย ยังไม่ DONE
+    _, st = zstep(z, 3.5, {12: 90})                            # แก้วจริงโผล่ใน B เป็น id ใหม่ → รับต่อจาก record ของ ghost
+    assert st == {12: TRANSIT}
+    assert zstep(z, 3.75, {12: 90})[1] == {12: TRANSIT}        # ต้องพิสูจน์เองว่าอยู่ใน B ต่อเนื่อง (ไม่ใช้เวลาของ ghost)
+    assert zstep(z, 4.0, {12: 90})[1] == {12: DONE} and z.counts() == (1, 1)
+
+
+def test_zone_brief_touch_of_b_is_not_done():
+    z = ZoneTracker(hold_seconds=0, settle_seconds=1.0)
+    z.set_zones(ZA, ZB)
+    zstep(z, 0, {1: 10}); zstep(z, 1, {1: 10}, held={1})       # TRANSIT
+    assert zstep(z, 2, {1: 85})[1] == {1: TRANSIT}             # ผ่านขอบ B
+    assert zstep(z, 2.5, {1: 50})[1] == {1: TRANSIT}           # ออกไปก่อนครบเวลา — ตัวจับเวลาต้องเริ่มใหม่
+    assert zstep(z, 3, {1: 85})[1] == {1: TRANSIT}
+    assert zstep(z, 3.5, {1: 85})[1] == {1: TRANSIT}           # อยู่มาแค่ 0.5 วิ นับจากครั้งที่สอง (ไม่ใช่ตั้งแต่ t=2)
+    assert zstep(z, 4, {1: 85})[1] == {1: DONE}
+
+
+def test_zone_new_cup_in_a_cannot_take_transit():
+    """ระหว่างที่แก้ว #1 (TRANSIT) ถูกบัง มีคนวางแก้วใบที่สองลงใน A — ใบที่สองต้องเป็นของมันเอง (AT_A)
+    ไม่ใช่ขโมยสถานะ TRANSIT · แก้วจริงที่โผล่ใน B ทีหลังยังรับต่อได้"""
+    z = ZoneTracker(hold_seconds=0, settle_seconds=0.5, handoff_seconds=3.0)
+    z.set_zones(ZA, ZB)
+    zstep(z, 0, {1: 10}); zstep(z, 1, {1: 10}, held={1}); zstep(z, 2, {1: 40}, held={1})
+    ev, st = zstep(z, 3, {2: 10})                              # แก้วใบใหม่ใน A
+    assert st[2] == AT_A and ev == ["#2 อยู่ที่ A"], (st, ev)
+    zstep(z, 4, {2: 10})
+    assert zstep(z, 5, {2: 10, 3: 90})[1][3] == TRANSIT        # แก้วจริงโผล่ที่ B → รับ TRANSIT จาก #1
+    st = zstep(z, 6, {2: 10, 3: 90})[1]
+    assert st == {2: AT_A, 3: DONE} and z.counts() == (1, 2), (st, z.counts())
+    # แก้ว AT_A ที่หายแล้ว id ใหม่โผล่ใน A ยังรับต่อได้ (ใบเดียวกัน) — ข้อห้ามเฉพาะ TRANSIT
+    z2 = ZoneTracker(hold_seconds=99, handoff_seconds=3.0)
+    z2.set_zones(ZA, ZB)
+    zstep(z2, 0, {1: 10})
+    assert zstep(z2, 1, {4: 12})[1] == {4: AT_A}
+
+
+def test_zone_hold_is_time_not_frames():
+    """จับแก้วใน A: นับเป็นวินาที — เฟรมถี่ (GPU) กับเฟรมห่าง (CPU) ต้องขึ้น TRANSIT ที่เวลาเดียวกัน"""
+    for step in (0.05, 0.5):                                   # 20 FPS กับ 2 FPS
+        z = ZoneTracker(hold_seconds=1.0, settle_seconds=99)
+        z.set_zones(ZA, ZB)
+        zstep(z, 0.0, {1: 10})
+        t, state = 0.0, AT_A
+        while state == AT_A and t < 5:
+            t += step
+            state = zstep(z, t, {1: 10}, held={1})[1][1]
+        assert state == TRANSIT and abs((t - step) - 1.0) <= step + 1e-9, (step, t)   # จับเริ่มที่เฟรมแรก (t=step) → ครบ 1 วิ
+
+
 def test_zone_multiple_cups_independent_and_counts():
-    z = ZoneTracker(hold_frames=1)
+    z = ZoneTracker(hold_seconds=0)
     z.set_zones(ZA, ZB)
     zstep(z, 0, {1: 10, 2: 20, 3: 50})
     zstep(z, 1, {1: 10, 2: 20, 3: 50}, held={1})
     zstep(z, 2, {1: 85, 2: 20, 3: 50})
+    zstep(z, 3, {1: 85, 2: 20, 3: 50})
     assert dict(z.rows()) == {1: DONE, 2: AT_A, 3: IDLE}
     assert z.counts() == (1, 2)                                # IDLE ไม่นับในตัวหาร
 
 
 def test_zone_redraw_resets_states():
-    z = ZoneTracker(hold_frames=1)
+    z = ZoneTracker(hold_seconds=0)
     z.set_zones(ZA, ZB)
     zstep(z, 0, {1: 10})
     z.set_zones(ZA, None)                                      # วาดใหม่ระหว่างทาง
@@ -438,6 +506,10 @@ if __name__ == "__main__":
     test_zone_transit_persists_when_released_and_returns_to_a()
     test_zone_id_handoff()
     test_zone_handoff_far_return()
+    test_zone_ghost_in_b_cannot_finish_a_transit()
+    test_zone_brief_touch_of_b_is_not_done()
+    test_zone_new_cup_in_a_cannot_take_transit()
+    test_zone_hold_is_time_not_frames()
     test_zone_handoff_limits()
     test_zone_handoff_keeps_settle_progress()
     test_zone_settle_is_time_not_frames()
