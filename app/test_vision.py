@@ -515,7 +515,46 @@ def test_resolve_model_path():
             assert vision.resolve_model_path(cfg) == "models/cup_v1.pt"            # ขาดตัวเดียวก็ไม่ได้
 
 
+# ─────────── สลับกล้อง ───────────
+def test_camera_switch_never_serves_the_old_camera():
+    """สั่งสลับแล้ว ระหว่างที่กล้องใหม่กำลังเปิด read() ต้องไม่ส่งเฟรมของกล้องเก่าออกมา (เคยค้างภาพกล้องก่อนหน้า
+    ทั้งที่ปุ่มบอกกล้องใหม่ — กล้อง Windows เปิดช้าได้หลายวินาที) แล้วจบที่กล้องใหม่เสมอ"""
+    class FakeCap:
+        def __init__(self, idx):
+            self.idx, self.opened = idx, False
+            time.sleep(0.4 if idx == 0 else 0.05)             # กล้อง 0 เปิดช้า
+            self.opened = True
+        def set(self, *a): pass
+        def isOpened(self): return self.opened
+        def read(self):
+            time.sleep(0.01)
+            return (True, np.full((4, 4, 3), self.idx + 1, np.uint8)) if self.opened else (False, None)
+        def release(self): self.opened = False
+
+    def which(cam):
+        ok, f = cam.read()
+        return ok, None if f is None else int(f[0, 0, 0]) - 1
+
+    with patch("vision.cv2.VideoCapture", FakeCap), patch("builtins.print"):
+        cam = vision.Camera(1, mirror=False, available=[0, 1])
+        time.sleep(0.2)
+        assert which(cam) == (True, 1)
+        cam.switch(0)
+        end = time.time() + 0.3                                # ช่วงที่กล้อง 0 ยังเปิดไม่เสร็จ
+        while time.time() < end:
+            ok, who = which(cam)
+            assert who != 1 and not ok, (ok, who)              # ห้ามมีเฟรมกล้อง 1 หลุดออกมา
+            time.sleep(0.01)
+        time.sleep(0.5)
+        assert which(cam) == (True, 0) and cam.index == 0
+        cam.switch(1); cam.switch(0); cam.switch(1)            # สลับรัว: จบที่ใบสุดท้าย
+        time.sleep(0.8)
+        assert which(cam) == (True, 1) and cam.index == 1
+        cam.release()
+
+
 if __name__ == "__main__":
+    test_camera_switch_never_serves_the_old_camera()
     test_resolve_model_path()
     test_zone_geometry()
     test_zone_idle_until_in_a_and_not_ready()

@@ -276,26 +276,37 @@ class Camera:
         self.ok = False
         self._stop = False
         self._switch = False
+        self._gen = 0                           # เลขรุ่นของกล้องที่เลือก — เฟรมที่อ่านมาจากกล้องรุ่นเก่าถูกทิ้ง
         self.cap = self._open()
         threading.Thread(target=self._loop, daemon=True).start()
 
     def switch(self, index):
-        """สลับกล้องระหว่างรัน — ยกธง เธรด _loop เปิดตัวใหม่ให้ตอนวนรอบถัดไป (ไม่แตะ cap ข้ามเธรด)"""
+        """สลับกล้องระหว่างรัน — ยกธง เธรด _loop เปิดตัวใหม่ให้ตอนวนรอบถัดไป (ไม่แตะ cap ข้ามเธรด)
+        ล้างเฟรมเก่าทิ้งทันที: ระหว่างที่กล้องใหม่กำลังเปิด (Windows ช้าได้หลายวินาที) แอปต้องเห็น
+        "กำลังเชื่อมต่อ" ไม่ใช่ภาพค้างของกล้องก่อนหน้าที่ดูเหมือนยังไม่ได้สลับ"""
         with self.lock:
             self.index, self._switch, self.ok = index, True, False
+            self.frame = None
+            self._gen += 1
+        print(f"กล้อง: สลับไป index {index}")
 
     def _open(self):
-        cap = cv2.VideoCapture(self.index)
+        with self.lock:
+            index = self.index
+        cap = cv2.VideoCapture(index)
         if self.width:
             cap.set(cv2.CAP_PROP_FRAME_WIDTH, self.width)
         if self.height:
             cap.set(cv2.CAP_PROP_FRAME_HEIGHT, self.height)
+        print(f"กล้อง: เปิด index {index} → {'ได้' if cap.isOpened() else 'ไม่ได้'}")
         return cap
 
     def _loop(self):
         while not self._stop:
-            if self._switch:
+            with self.lock:                     # อ่านธง/index/รุ่นพร้อมกัน — สลับซ้อนกลางทางไม่ทำธงหาย
+                switching, gen = self._switch, self._gen
                 self._switch = False
+            if switching:
                 self.cap.release()
                 self.cap = self._open()
             ret, f = (self.cap.read() if self.cap.isOpened() else (False, None))
@@ -309,7 +320,8 @@ class Camera:
             if self.mirror:
                 f = cv2.flip(f, 1)
             with self.lock:
-                self.frame, self.ok = f, True
+                if gen == self._gen:            # สลับกล้องระหว่างอ่าน = เฟรมนี้เป็นของกล้องเก่า ทิ้ง
+                    self.frame, self.ok = f, True
 
     def read(self):
         with self.lock:
