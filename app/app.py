@@ -11,8 +11,11 @@
 
 รัน:  python app/app.py        ค่าที่ต้องจูนหน้างานอยู่ใน app/config.yaml ทั้งหมด
 """
+import multiprocessing
+import os
 import sys
 import time
+from pathlib import Path
 
 import cv2
 
@@ -25,7 +28,7 @@ try:
     from PySide6.QtGui import (QColor, QFont, QFontMetrics, QImage, QPainter,
                                QPalette, QPen, QPixmap, QPolygonF)
     from PySide6.QtWidgets import (QAbstractButton, QApplication, QDialog, QDoubleSpinBox, QLabel, QHBoxLayout,
-                                   QMenu, QScrollArea, QVBoxLayout, QWidget)
+                                   QMenu, QMessageBox, QScrollArea, QSplashScreen, QVBoxLayout, QWidget)
 except ImportError:
     raise SystemExit("\nไม่มี PySide6 — ติดตั้งก่อน:  pip install -r app/requirements.txt\n")
 
@@ -789,7 +792,7 @@ class Station(QWidget):
 
     def shot(self):
         if self.view.raw is not None:
-            fn = f"shot_{int(time.time())}.png"
+            fn = str(shots_dir() / f"shot_{int(time.time())}.png")
             cv2.imwrite(fn, self.view.raw)
             print("เซฟภาพ:", fn)
             self.flash(f"บันทึกภาพ {fn}")
@@ -972,16 +975,109 @@ class Footer(QWidget):
 
 
 # ─────────────────────────── main ───────────────────────────
-def main():
-    import vision
+FROZEN = getattr(sys, "frozen", False)      # รันจากตัวติดตั้ง ไม่ใช่ python app/app.py
 
-    cfg = vision.load_config()
-    analyzer, cam = vision.start(cfg)
+
+def shots_dir():
+    """รูปที่กด S บันทึก — ตัวติดตั้งไม่มีโฟลเดอร์ทำงานที่เขียนได้ ลงโฟลเดอร์รูปภาพของผู้ใช้"""
+    pics = Path.home() / "Pictures"
+    return pics if FROZEN and pics.is_dir() else Path.cwd()
+
+
+def to_log_file():
+    """แอปที่ติดตั้งไม่มีหน้าต่าง console (และ Windows ไม่มี stdout เลย) — ส่งข้อความทั้งหมดลงไฟล์
+    เก็บแค่ครั้งล่าสุด (app.log) ไว้ให้ส่งมาดูเวลามีปัญหา · คืน path ของไฟล์"""
+    from userdir import user_dir          # ไม่ import vision ที่นี่ — ต้องตั้งไฟล์ log ก่อนที่ torch/ultralytics จะพิมพ์อะไร
+    d = user_dir()
+    d.mkdir(parents=True, exist_ok=True)
+    path = d / "app.log"
+    sys.stdout = sys.stderr = open(path, "w", encoding="utf-8", buffering=1)
+    return path
+
+
+def fatal(msg):
+    """ข้อผิดพลาดที่ทำให้เปิดแอปไม่ได้ — แอปที่ติดตั้งไม่มี console ต้องขึ้นหน้าต่างให้ผู้ใช้เห็น"""
+    print(msg)
+    box = QMessageBox(QMessageBox.Icon.Critical, "Inspection Station", "เปิดแอปไม่สำเร็จ")
+    box.setInformativeText(str(msg).strip())
+    box.exec()
+    sys.exit(1)
+
+
+def boot_splash(app):
+    """หน้าต่างรอตอนโหลดโมเดล/กล้อง (หลายวินาที) — ไม่มีมัน ดับเบิลคลิกไอคอนแล้วไม่มีอะไรขึ้นเลย"""
+    img = splash("loading model and camera...", 720)
+    img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
+    qimg = QImage(img.data, img.shape[1], img.shape[0], img.strides[0], QImage.Format.Format_RGB888)
+    box = QSplashScreen(QPixmap.fromImage(qimg))
+    box.show()
+    app.processEvents()
+    return box
+
+
+def selftest(out):
+    """`InspectionStation --selftest <ไฟล์>` — โหลดโมเดล + MediaPipe + วาดเฟรมหนึ่งใบ + สร้างวิดเจ็ต Qt โดยไม่ต้องมีกล้อง/จอ
+    ตัวสร้างติดตั้ง (CI) ใช้เช็กว่าที่แพ็กมาครบจริง · เขียนผลลงไฟล์เพราะแอปแบบไม่มี console พิมพ์ออกหน้าจอไม่ได้"""
+    import traceback
+    lines = []
+    try:
+        os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
+        import mediapipe as mp
+        import numpy as np
+        import vision
+
+        app = QApplication(sys.argv)
+        cfg = vision.load_config()
+        cfg["model_path"] = vision.resolve_model_path(cfg)
+        model = vision.load_model(cfg)
+        hands = vision.load_hand_landmarker(cfg)
+        frame = np.zeros((480, 640, 3), np.uint8)
+        dev = vision.pick_device(cfg)
+        model.predict(frame, imgsz=cfg.get("imgsz", 480), device=dev, verbose=False)
+        hands.detect_for_video(mp.Image(image_format=mp.ImageFormat.SRGB, data=frame), 1)
+        insp = vision.Inspection(8, 5, 4.0)
+        shown = vision.draw(frame.copy(), [(1, [100, 100, 300, 400], False)], [], set(), insp, False,
+                            confidences={1: 0.9})
+        view = Viewport()
+        view.resize(640, 360)
+        view.set_frame(shown)
+        lines += [f"SELFTEST OK model={cfg['model_path']} device={dev}",
+                  f"python={sys.version.split()[0]} frozen={FROZEN} resources={vision.HERE}"]
+        code = 0
+    except BaseException:
+        lines += ["SELFTEST FAILED", traceback.format_exc()]
+        code = 1
+    Path(out).write_text("\n".join(lines) + "\n", encoding="utf-8")
+    return code
+
+
+def main():
+    multiprocessing.freeze_support()           # PyInstaller + torch/ultralytics อาจเปิดโปรเซสลูก
+    if "--selftest" in sys.argv:
+        i = sys.argv.index("--selftest")
+        raise SystemExit(selftest(sys.argv[i + 1] if len(sys.argv) > i + 1 else "selftest.txt"))
+    if FROZEN:
+        to_log_file()
 
     app = QApplication(sys.argv)
     app.setApplicationName("Inspection Station")
+    boot = boot_splash(app)
+    try:
+        import vision
+
+        cfg = vision.load_config()
+        analyzer, cam = vision.start(cfg)
+    except SystemExit as e:                    # vision.start() ออกด้วยข้อความไทยที่บอกว่าต้องแก้อะไร
+        boot.close()
+        fatal(e.code if isinstance(e.code, str) else "ออกจากโปรแกรม")
+    except Exception:
+        import traceback
+        boot.close()
+        fatal(traceback.format_exc())
+
     win = Station(analyzer, cfg)
     win.show()
+    boot.finish(win)
     app.exec()
 
     analyzer.release()

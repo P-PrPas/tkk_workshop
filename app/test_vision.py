@@ -553,7 +553,43 @@ def test_camera_switch_never_serves_the_old_camera():
         cam.release()
 
 
+# ─────────── ตัวติดตั้ง: พาธของแอปที่แพ็กแล้ว ───────────
+def test_installed_app_user_config_and_files():
+    """แอปที่ติดตั้งแล้วแก้ค่าที่มากับแอปไม่ได้ — config / โมเดลสำรองของผู้ใช้อยู่ที่ user_dir() และทับของที่มากับแอป"""
+    with tempfile.TemporaryDirectory() as d, patch("vision.user_dir", return_value=Path(d)):
+        with patch("vision.FROZEN", True):
+            base = vision.load_config()
+            (Path(d) / "config.yaml").write_text("model_name: cup_v1\nconf: 0.3\n", encoding="utf-8")
+            cfg = vision.load_config()
+            assert cfg["model_name"] == "cup_v1" and cfg["conf"] == 0.3
+            assert cfg["pick_seconds"] == base["pick_seconds"]            # ค่าที่ไม่ได้ใส่คงเดิม
+            (Path(d) / "config.yaml").write_text("", encoding="utf-8")    # ไฟล์ว่างไม่พัง
+            assert vision.load_config() == base
+            (Path(d) / "models").mkdir()
+            (Path(d) / "models" / "x.pt").write_bytes(b"1")
+            assert vision.find_file("models/x.pt") == Path(d) / "models" / "x.pt"          # ของผู้ใช้มาก่อน
+            assert vision.find_file("hand_landmarker.task") == vision.HERE / "hand_landmarker.task"   # ไม่มีของผู้ใช้ → ของแอป
+        with patch("vision.FROZEN", False):                                                  # รันจากซอร์ส: ไม่ยุ่งกับ user_dir
+            (Path(d) / "config.yaml").write_text("conf: 0.99\n", encoding="utf-8")
+            assert vision.load_config()["conf"] != 0.99
+            assert vision.find_file("models/x.pt") == vision.HERE / "models" / "x.pt"
+
+
+
+def test_user_dir_per_platform():
+    """ที่เก็บไฟล์ผู้ใช้ตามระบบ — ตรงกับที่เขียนไว้ใน docs/05 และข้อความในตัวติดตั้ง"""
+    import userdir
+    with patch("userdir.sys.platform", "win32"), patch.dict("os.environ", {"APPDATA": "C:/Users/u/AppData/Roaming"}):
+        assert userdir.user_dir() == Path("C:/Users/u/AppData/Roaming/InspectionStation")
+    with patch("userdir.sys.platform", "darwin"), patch("userdir.Path.home", return_value=Path("/Users/u")):
+        assert userdir.user_dir() == Path("/Users/u/Library/Application Support/InspectionStation")
+    with patch("userdir.sys.platform", "linux"), patch.dict("os.environ", {"XDG_CONFIG_HOME": "/x"}):
+        assert userdir.user_dir() == Path("/x/InspectionStation")
+
+
 if __name__ == "__main__":
+    test_user_dir_per_platform()
+    test_installed_app_user_config_and_files()
     test_camera_switch_never_serves_the_old_camera()
     test_resolve_model_path()
     test_zone_geometry()

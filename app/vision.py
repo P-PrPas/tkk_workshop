@@ -26,6 +26,13 @@ from types import SimpleNamespace
 # ไป init Metal (DrishtiMetalHelper) แล้ว abort ทั้งโปรเซส ถ้า Metal service ไม่พร้อม
 os.environ.setdefault("MEDIAPIPE_DISABLE_GPU", "1")
 
+FROZEN = getattr(sys, "frozen", False)      # รันจากตัวติดตั้ง (PyInstaller) ไม่ใช่ python app/app.py
+if FROZEN:
+    # แอปที่แพ็กแล้วไม่มี pip และไม่ต้องใช้เน็ต: กัน ultralytics เช็กออนไลน์ตอนเปิด (ช้าตอนออฟไลน์)
+    # และกันมันพยายาม pip install เอง — ต้องตั้งก่อน import ultralytics
+    os.environ.setdefault("YOLO_OFFLINE", "true")
+    os.environ.setdefault("YOLO_AUTOINSTALL", "false")
+
 import cv2
 import mediapipe as mp
 import torch
@@ -36,9 +43,10 @@ from ultralytics import YOLO
 from ultralytics.trackers.byte_tracker import BYTETracker
 
 from overlay import draw, splash
+from userdir import user_dir
 from zone import ZoneTracker
 
-HERE = Path(__file__).parent
+HERE = Path(getattr(sys, "_MEIPASS", Path(__file__).parent))   # แอปที่แพ็กแล้ว: โฟลเดอร์ทรัพยากรของตัวแอป (อ่านอย่างเดียว)
 HAND_TASK = HERE / "hand_landmarker.task"
 HAND_TASK_URL = ("https://storage.googleapis.com/mediapipe-models/hand_landmarker/"
                  "hand_landmarker/float16/1/hand_landmarker.task")
@@ -566,10 +574,22 @@ def list_cameras(probe=3):
     return found or [0]
 
 
+def find_file(rel):
+    """หาไฟล์ทรัพยากร: แอปที่ติดตั้งแล้วมองในโฟลเดอร์ผู้ใช้ก่อน (วางโมเดลสำรองเองได้) ไม่งั้นใช้ของที่มากับแอป"""
+    if FROZEN and (user_dir() / rel).exists():
+        return user_dir() / rel
+    return HERE / rel
+
+
 def load_config():
     # encoding ระบุชัด — Windows default เป็น cp1252 อ่านคอมเมนต์ไทยใน yaml ไม่ได้
     with open(HERE / "config.yaml", encoding="utf-8") as f:
-        return yaml.safe_load(f)
+        cfg = yaml.safe_load(f)
+    mine = user_dir() / "config.yaml"           # แอปที่ติดตั้งแล้ว: ใส่เฉพาะค่าที่อยากเปลี่ยนไว้ที่นี่ ทับค่าที่มากับแอป
+    if FROZEN and mine.exists():
+        with open(mine, encoding="utf-8") as f:
+            cfg.update(yaml.safe_load(f) or {})
+    return cfg
 
 
 def pick_device(cfg):
@@ -596,7 +616,7 @@ def resolve_model_path(cfg):
     name = cfg.get("model_name", "cup_v2")
     pt, onnx = f"models/{name}.pt", f"models/{name}.onnx"
     on_cpu = pick_device({**cfg, "model_path": pt}) == "cpu"
-    if not (on_cpu and (HERE / onnx).exists()):
+    if not (on_cpu and find_file(onnx).exists()):
         return pt
     missing = [m for m in ONNX_PACKAGES if importlib.util.find_spec(m) is None]
     if missing:
@@ -611,12 +631,13 @@ def load_model(cfg):
     .onnx ใช้กับ CPU ล้วน (ต้องมีทั้ง onnx และ onnxruntime — ดู requirements.txt)"""
     p = Path(cfg["model_path"])
     if not p.is_absolute():
-        p = HERE / p
+        p = find_file(p)
 
     if not p.exists():
+        where = f" หรือที่ {user_dir() / 'models'} (แอปที่ติดตั้งแล้ว)" if FROZEN else ""
         raise SystemExit(
             f"\nหาไฟล์โมเดลไม่เจอ: {p}\n"
-            f"วาง {p.name} (และ .onnx ชื่อเดียวกันสำหรับเครื่อง CPU ล้วน) ไว้ที่ app/models/\n"
+            f"วาง {p.name} (และ .onnx ชื่อเดียวกันสำหรับเครื่อง CPU ล้วน) ไว้ที่ app/models/{where}\n"
             "v2: อยู่ที่เครื่องเทรน runs/cup_big3/weights/best.pt (default — model_name: cup_v2 ใน config.yaml)\n"
             "v1: gh release download v1 -R P-PrPas/tkk_workshop -p best.pt -O app/models/cup_v1.pt (ตั้ง model_name: cup_v1)\n"
             "หรือใช้แผนสำรอง: model_path: yolo11m.pt  +  cup_class: 41  ใน config.yaml\n"
@@ -693,5 +714,7 @@ def start(cfg):
                 f"\nเปิดกล้องไม่ได้ (camera_index = {idx})\n"
                 "เช็กว่ากล้องเสียบอยู่ ไม่มีโปรแกรมอื่นแย่งใช้ แล้วลองเปลี่ยน "
                 "camera_index ใน config.yaml เป็น 1 หรือ 2\n"
+                "macOS: ตั้งค่าระบบ → ความเป็นส่วนตัวและความปลอดภัย → กล้อง → เปิดให้ Inspection Station\n"
+                "Windows: การตั้งค่า → ความเป็นส่วนตัว → กล้อง → อนุญาตแอปเดสก์ท็อป\n"
             )
     return Analyzer(cam, model, hands, cfg), cam
