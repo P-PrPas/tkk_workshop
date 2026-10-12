@@ -11,6 +11,7 @@
   5. Inspection — เช็กลิสต์ว่าชิ้นไหนถูกหยิบไปตรวจแล้ว + เส้นทางที่มันเคลื่อนที่มา
   6. จัดการ error จริง — กล้องหลุดต่อใหม่, โมเดล/กล้องหาย ขึ้นข้อความไทย
 """
+import functools
 import importlib.util
 import os
 import sys
@@ -592,6 +593,18 @@ def load_config():
     return cfg
 
 
+@functools.lru_cache(maxsize=None)
+def device_works(name):
+    """torch รายงานว่ามี GPU ไม่ได้แปลว่าใช้ได้ — การ์ดรุ่นเก่าที่ torch ไม่มี kernel ให้ (CUDA) หรือเครื่องเสมือนที่ไม่มี GPU จริง
+    (MPS) จะ error ทุกเฟรมตอนตรวจ ลองสร้าง tensor เล็ก ๆ ก่อน ถ้าไม่ได้ให้ตกไปตัวถัดไป/CPU"""
+    try:
+        (torch.zeros(8, device=name) + 1).sum().item()
+        return True
+    except Exception as e:
+        print(f"ใช้ {name} ไม่ได้ ({str(e).splitlines()[0][:120]}) — ใช้ตัวถัดไป/CPU แทน")
+        return False
+
+
 def pick_device(cfg):
     """เลือก device เอง: config ระบุมา (cuda/mps/cpu) ใช้ตามนั้น · เว้นว่าง/auto → ไล่หาที่เร็วสุด
     onnx บังคับ cpu เสมอ (onnxruntime CUDA EP พังง่ายบนบางเครื่อง)"""
@@ -600,9 +613,9 @@ def pick_device(cfg):
         return d
     if str(cfg["model_path"]).endswith(".onnx"):
         return "cpu"
-    if torch.cuda.is_available():
+    if torch.cuda.is_available() and device_works("cuda"):
         return "cuda"
-    if torch.backends.mps.is_available():        # Apple Silicon
+    if torch.backends.mps.is_available() and device_works("mps"):        # Apple Silicon
         return "mps"
     return "cpu"
 

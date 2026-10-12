@@ -587,7 +587,26 @@ def test_user_dir_per_platform():
         assert userdir.user_dir() == Path("/x/InspectionStation")
 
 
+def test_pick_device_skips_a_gpu_that_does_not_work():
+    """torch เห็น GPU แต่ใช้ไม่ได้จริง (รุ่นเก่าที่ไม่มี kernel · เครื่องเสมือนที่ไม่มี GPU) → ตกไปตัวถัดไป ไม่ error ทุกเฟรม"""
+    cfg = {"model_path": "models/x.pt", "device": ""}
+    with patch("vision.torch.cuda.is_available", return_value=True), \
+            patch("vision.torch.backends.mps.is_available", return_value=True):
+        with patch("vision.device_works", side_effect=lambda n: n == "mps"):
+            assert vision.pick_device(cfg) == "mps"                       # CUDA ใช้ไม่ได้ → MPS
+        with patch("vision.device_works", return_value=False):
+            assert vision.pick_device(cfg) == "cpu"
+        with patch("vision.device_works", return_value=True):
+            assert vision.pick_device(cfg) == "cuda"
+        assert vision.pick_device({**cfg, "device": "cuda"}) == "cuda"   # ระบุเองใน config ใช้ตามนั้น ไม่ลองให้
+    vision.device_works.cache_clear()
+    assert vision.device_works("cpu") is True
+    with patch("builtins.print"):
+        assert vision.device_works("no-such-device") is False
+
+
 if __name__ == "__main__":
+    test_pick_device_skips_a_gpu_that_does_not_work()
     test_user_dir_per_platform()
     test_installed_app_user_config_and_files()
     test_camera_switch_never_serves_the_old_camera()
