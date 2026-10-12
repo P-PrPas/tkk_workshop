@@ -41,7 +41,7 @@
 
 ## สร้างตัวติดตั้ง (ผู้พัฒนา)
 
-### ครั้งแรก: แนบโมเดลเป็น Release (ทำครั้งเดียว)
+### ครั้งแรก: แนบโมเดลเป็น Release (ทำครั้งเดียว — สร้างไว้แล้วเมื่อ 2026-10-12)
 ตัวสร้างบน GitHub ไม่มีไฟล์โมเดล (ไม่อยู่ใน git) จึงดึงจาก Release `models-v2` (v1 ดึงจาก Release `v1` ที่มีอยู่แล้ว):
 ```bash
 gh release create models-v2 app/models/cup_v2.pt app/models/cup_v2.onnx \
@@ -50,7 +50,7 @@ gh release create models-v2 app/models/cup_v2.pt app/models/cup_v2.onnx \
 ⚠️ repo เป็น public — **ทุกคนดาวน์โหลดโมเดลได้** คำสั่งนี้เผยแพร่ไฟล์ จึงรันเมื่อพร้อมเท่านั้น
 
 ### สร้างบน GitHub Actions
-- **ลองสร้าง:** Actions → *Build installers* → *Run workflow* → ดาวน์โหลดไฟล์จาก **Artifacts** ของ run นั้น
+- **ลองสร้าง:** Actions → *Build installers* → *Run workflow* → ดาวน์โหลดไฟล์จาก **Artifacts** ของ run นั้น (สั่งมือได้เมื่อไฟล์ workflow อยู่บน `main` แล้ว) · PR ที่แก้ไฟล์ใน `installer/` จะสร้างให้เองด้วย
 - **ปล่อยจริง:** `git tag app-v1.0.0 && git push origin app-v1.0.0` → ตัวติดตั้งทั้งสองแนบกับ Release `app-v1.0.0` (เปลี่ยนเลขรุ่นที่ไฟล์ `VERSION` ก่อน)
 
 ในตัวสร้างทำตามนี้ — ถ้าขั้นไหนพังจะไม่ได้ไฟล์:
@@ -81,4 +81,9 @@ Windows ต้องมี [Inno Setup 6](https://jrsoftware.org/isinfo.php) (`c
 - **Mac Intel ไม่รองรับ:** torch รุ่นสุดท้ายที่มี wheel สำหรับ Mac Intel คือ 2.2 ต้องแยกการสร้างและทดสอบต่างหาก
 - **Windows ไม่ใช้ GPU NVIDIA:** torch ในตัวติดตั้งเป็นรุ่น CPU (รุ่น CUDA ทำให้ตัวติดตั้งใหญ่หลาย GB) ตรวจแก้วด้วย ONNX บน CPU แทน
 - **ไม่มีการอัปเดตอัตโนมัติ:** รุ่นใหม่ = ติดตั้งทับตัวเดิม (Windows: `AppId` เดิม จึงอัปเกรดทับได้ · macOS: ลากทับ)
-- **สถานะการทดสอบ:** แพ็กและ selftest ทดสอบบน Linux เป็นตัวแทนเท่านั้น ตัวสร้างบน Windows/macOS (Inno Setup, dmgbuild, หน้าตาตัวติดตั้ง, การขอสิทธิ์กล้อง) ต้องรันบน GitHub Actions และเครื่องจริงถึงจะรู้ผล
+- **ผลทดสอบบน GitHub Actions** (ดู run ของ PR ที่เพิ่มตัวติดตั้ง):
+  - Windows: แพ็ก → selftest (โหลด `cup_v2.onnx` บน CPU + MediaPipe + วาดเฟรม + Qt) → Inno Setup สำเร็จ ได้ `.exe` ประมาณ 340 MB
+  - macOS arm64: แพ็ก (เซ็นแบบ ad-hoc) → selftest → dmgbuild สำเร็จ ได้ `.dmg` ประมาณ 449 MB
+  - เครื่องเสมือน macOS ของ GitHub ไม่มี GPU/Metal: selftest จึงใช้ CPU และ **ตัวตรวจมือ MediaPipe ล้ม** (ขึ้น `HANDS NOT VERIFIED` ใน log) — ตรวจเฉพาะส่วนนี้บน Mac จริงเท่านั้น
+- **ยังไม่มีใครตรวจ:** หน้าตาตัวติดตั้งจริง, SmartScreen / Gatekeeper, หน้าต่างขอสิทธิ์กล้อง, ความเร็ว ONNX บน CPU ของเครื่อง Windows จริง
+- **ก่อนแจกทีม sales ต้องลองบน Mac จริงหนึ่งเครื่อง:** ติดตั้งจาก `.dmg` → เปิดแอป → เห็นภาพกล้อง → มือถูกตรวจ (กรอบโครงมือขึ้น) → เปิด/ปิดโหมด zone ได้ ถ้ามือไม่ขึ้นหรือแอปดับ ส่ง `app.log` (ดูตารางไฟล์ของผู้ใช้) มาให้ดู
