@@ -1010,7 +1010,8 @@ def shots_dir():
 def to_log_file():
     """แอปที่ติดตั้งไม่มีหน้าต่าง console (และ Windows ไม่มี stdout เลย) — ส่งข้อความทั้งหมดลงไฟล์
     เก็บแค่ครั้งล่าสุด (app.log) ไว้ให้ส่งมาดูเวลามีปัญหา · คืน path ของไฟล์"""
-    from userdir import user_dir          # ไม่ import vision ที่นี่ — ต้องตั้งไฟล์ log ก่อนที่ torch/ultralytics จะพิมพ์อะไร
+    from userdir import migrate_legacy_user_dir, user_dir          # ไม่ import vision ที่นี่ — ต้องตั้งไฟล์ log ก่อนที่ torch/ultralytics จะพิมพ์อะไร
+    migrate_legacy_user_dir()
     d = user_dir()
     d.mkdir(parents=True, exist_ok=True)
     path = d / "app.log"

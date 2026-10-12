@@ -605,7 +605,29 @@ def test_pick_device_skips_a_gpu_that_does_not_work():
         assert vision.device_works("no-such-device") is False
 
 
+def test_legacy_user_dir_is_migrated_once():
+    """config / โมเดลของผู้ใช้ในโฟลเดอร์ชื่อเดิม (Inspection Station) ถูกคัดลอกมาโฟลเดอร์ใหม่ครั้งเดียว โดยไม่เอา log ไป"""
+    import userdir
+    with tempfile.TemporaryDirectory() as d:
+        new, old = Path(d) / "TKKWorkshop", Path(d) / "InspectionStation"
+        with patch("userdir.user_dir", return_value=new):
+            userdir.migrate_legacy_user_dir()                                   # ไม่มีของเดิม ไม่ทำอะไร
+            assert not new.exists()
+            (old / "models").mkdir(parents=True)
+            (old / "config.yaml").write_text("conf: 0.3\n", encoding="utf-8")
+            (old / "models" / "x.pt").write_bytes(b"1")
+            (old / "app.log").write_text("old log", encoding="utf-8")
+            userdir.migrate_legacy_user_dir()
+            assert (new / "config.yaml").read_text(encoding="utf-8") == "conf: 0.3\n"
+            assert (new / "models" / "x.pt").exists() and not (new / "app.log").exists()
+            (new / "config.yaml").write_text("conf: 0.5\n", encoding="utf-8")   # มีโฟลเดอร์ใหม่แล้ว ไม่ทับ
+            userdir.migrate_legacy_user_dir()
+            assert (new / "config.yaml").read_text(encoding="utf-8") == "conf: 0.5\n"
+            assert (old / "config.yaml").exists()                               # ของเดิมไม่ถูกลบ
+
+
 if __name__ == "__main__":
+    test_legacy_user_dir_is_migrated_once()
     test_pick_device_skips_a_gpu_that_does_not_work()
     test_user_dir_per_platform()
     test_installed_app_user_config_and_files()

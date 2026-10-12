@@ -88,14 +88,22 @@ jobs:
       - name: Build (pack, self-test, installer)
         run: python installer/build.py
 
-      - name: Install the .pkg for real and check the installed app (macOS)
+      - name: Install the .pkg for real, replace the old name, reinstall, check the app (macOS)
         if: runner.os == 'macOS'
         shell: bash
         run: |
           PKG=$(ls dist/TKKWorkshop-*.pkg)
-          sudo installer -pkg "$PKG" -target /
           APP="/Applications/TKK Workshop.app"
+          # the app under its former name must be removed by the installer
+          sudo mkdir -p "/Applications/Inspection Station.app/Contents"
+          sudo touch "/Applications/Inspection Station.app/Contents/legacy.txt"
+          sudo installer -pkg "$PKG" -target /
           test -d "$APP"
+          test ! -e "/Applications/Inspection Station.app" || { echo "the old app was not removed"; exit 1; }
+          # reinstall over the same version: a stale file inside the bundle must disappear
+          sudo touch "$APP/Contents/stale.txt"
+          sudo installer -pkg "$PKG" -target /
+          test ! -e "$APP/Contents/stale.txt" || { echo "reinstall left a stale file behind"; exit 1; }
           codesign --verify --deep --strict --verbose=2 "$APP"
           echo "quarantine attribute after install: [$(xattr -p com.apple.quarantine "$APP" 2>/dev/null || true)] (empty = good)"
           spctl --assess --type execute --verbose=2 "$APP" || echo "(Gatekeeper rejects an app that is not notarized: expected until signing is set up)"
@@ -103,14 +111,28 @@ jobs:
           cat "$RUNNER_TEMP/installed.txt"
           grep -q "SELFTEST OK" "$RUNNER_TEMP/installed.txt"
 
-      - name: Install the .exe silently in Thai and check the installed app (Windows)
+      - name: Install the .exe silently in Thai, replace the old name, reinstall, check the app (Windows)
         if: runner.os == 'Windows'
         shell: pwsh
         run: |
           $setup = Get-ChildItem dist\TKKWorkshop-*-setup.exe | Select-Object -First 1
           $dir = Join-Path $env:RUNNER_TEMP "TKKWorkshopTest"
-          Start-Process -FilePath $setup.FullName -ArgumentList "/VERYSILENT","/SUPPRESSMSGBOXES","/NORESTART","/LANG=thai","/DIR=$dir" -Wait
+          $setupArgs = @("/VERYSILENT","/SUPPRESSMSGBOXES","/NORESTART","/LANG=thai","/DIR=$dir")
+          # a fake uninstall entry of the former product (Inspection Station): the installer must run it
+          $marker = Join-Path $env:RUNNER_TEMP "legacy_uninstalled.txt"
+          $fake = Join-Path $env:RUNNER_TEMP "fake_unins.cmd"
+          Set-Content -Path $fake -Value "@echo off`r`necho ran> `"$marker`""
+          $key = "HKCU:\Software\Microsoft\Windows\CurrentVersion\Uninstall\{7D3B2C1A-5E4F-4A8B-9C6D-1F2E3A4B5C6D}_is1"
+          New-Item -Path $key -Force | Out-Null
+          Set-ItemProperty -LiteralPath $key -Name UninstallString -Value "`"$fake`""
+          Start-Process -FilePath $setup.FullName -ArgumentList $setupArgs -Wait
           if (-not (Test-Path "$dir\TKKWorkshop.exe")) { throw "installer did not install the app" }
+          if (-not (Test-Path $marker)) { throw "the installer did not uninstall the former Inspection Station entry" }
+          # reinstall over the same folder: a stale file in the program folder must be removed
+          Set-Content -Path "$dir\_internal\stale.txt" -Value "stale"
+          Start-Process -FilePath $setup.FullName -ArgumentList $setupArgs -Wait
+          if (Test-Path "$dir\_internal\stale.txt") { throw "reinstall left a stale file behind" }
+          if (-not (Test-Path "$dir\TKKWorkshop.exe")) { throw "reinstall removed the app" }
           if (-not (Test-Path "$dir\unins000.exe")) { throw "uninstaller missing" }
           $out = Join-Path $env:RUNNER_TEMP "installed.txt"
           Start-Process -FilePath "$dir\TKKWorkshop.exe" -ArgumentList "--selftest","$out" -Wait
