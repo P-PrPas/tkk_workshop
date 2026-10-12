@@ -59,6 +59,8 @@ def package_macos(dist):
 
 
 def main():
+    for stream in (sys.stdout, sys.stderr):        # คอนโซล Windows เป็น cp1252 — ข้อความไทยทำให้สคริปต์ล้มตอนท้าย
+        stream.reconfigure(encoding="utf-8", errors="replace")
     ap = argparse.ArgumentParser()
     ap.add_argument("--no-package", action="store_true", help="ข้ามขั้นห่อเป็นตัวติดตั้ง")
     ap.add_argument("--skip-selftest", action="store_true")

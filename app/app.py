@@ -1022,9 +1022,9 @@ def selftest(out):
     lines = []
     try:
         os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
+        import vision                      # ต้องมาก่อน mediapipe: vision ตั้ง MEDIAPIPE_DISABLE_GPU ก่อน import (เหมือนตอนรันจริง)
         import mediapipe as mp
         import numpy as np
-        import vision
 
         app = QApplication(sys.argv)
         cfg = vision.load_config()
