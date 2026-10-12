@@ -1017,7 +1017,7 @@ def boot_splash(app):
 
 def selftest_hands(out):
     """โหมดลูกของ --selftest: โหลดตัวตรวจมือ MediaPipe แล้วตรวจเฟรมว่างหนึ่งใบ — แยกโปรเซสเพราะ MediaPipe บน macOS
-    ที่ไม่มีบริการ Metal (เครื่องเสมือนของ CI) สั่ง abort ทั้งโปรเซส ซึ่ง try/except จับไม่ได้"""
+    สั่ง abort ทั้งโปรเซสเมื่อสร้างตัวตรวจมือไม่ได้ (เคยเกิดบน macOS) ซึ่ง try/except จับไม่ได้"""
     import vision
     import mediapipe as mp
     import numpy as np
@@ -1035,8 +1035,6 @@ def selftest_hands_in_child(out):
     r = subprocess.run(cmd, timeout=300)
     if r.returncode == 0 and marker.exists():
         return "HANDS OK"
-    if os.environ.get("INSPECTION_SELFTEST_ALLOW_NO_HANDS") == "1":      # ตั้งเฉพาะ macOS บน CI (เครื่องเสมือนไม่มี Metal)
-        return f"HANDS NOT VERIFIED: the hand tracker process died (exit {r.returncode}); allowed on this runner only"
     raise RuntimeError(f"hand tracker self-test failed (exit {r.returncode})")
 
 

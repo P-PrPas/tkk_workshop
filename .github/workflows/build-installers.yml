@@ -86,10 +86,6 @@ jobs:
           echo "APPLE_API_ISSUER=${{ secrets.APPLE_API_ISSUER }}" >> "$GITHUB_ENV"
 
       - name: Build (pack, self-test, installer)
-        env:
-          # GitHub's macOS VMs have no Metal service and MediaPipe's hand tracker aborts there; the self-test then
-          # reports "HANDS NOT VERIFIED". Real Macs must be checked by hand (see docs/05-installer.md).
-          INSPECTION_SELFTEST_ALLOW_NO_HANDS: ${{ runner.os == 'macOS' && '1' || '0' }}
         run: python installer/build.py
 
       - name: Install the .pkg for real and check the installed app (macOS)
@@ -103,7 +99,7 @@ jobs:
           codesign --verify --deep --strict --verbose=2 "$APP"
           echo "quarantine attribute after install: [$(xattr -p com.apple.quarantine "$APP" 2>/dev/null || true)] (empty = good)"
           spctl --assess --type execute --verbose=2 "$APP" || echo "(Gatekeeper rejects an app that is not notarized: expected until signing is set up)"
-          INSPECTION_SELFTEST_ALLOW_NO_HANDS=1 "$APP/Contents/MacOS/InspectionStation" --selftest "$RUNNER_TEMP/installed.txt" || true
+          "$APP/Contents/MacOS/InspectionStation" --selftest "$RUNNER_TEMP/installed.txt" || true
           cat "$RUNNER_TEMP/installed.txt"
           grep -q "SELFTEST OK" "$RUNNER_TEMP/installed.txt"
 

@@ -47,8 +47,8 @@ tkk_workshop/            ← repo นี้
 ## ข้อเท็จจริงที่ตรวจสอบแล้ว อย่าเสียเวลาตรวจซ้ำ
 - Ultralytics **ไม่มี** hand-pose checkpoint สำเร็จรูป มีแต่ body pose 17 จุด
   และ dataset `hand-keypoints.yaml` ไว้ fine-tune เอง → ใช้ MediaPipe
-- `mediapipe==1.0.1` เป็น wheel `py3-none` ติดตั้งได้ทั้ง Python 3.12 และ 3.13
-  ทดสอบ `HandLandmarker` ด้วยการรันจริงแล้วผ่าน
+- `mediapipe==1.0.1` เป็น wheel `py3-none` ติดตั้งได้ทั้ง Python 3.12 และ 3.13 ทดสอบ `HandLandmarker` แล้วผ่านบน Windows/Linux
+  **แต่บน macOS 1.0.1 abort ทั้งโปรเซสตอนสร้างตัวตรวจมือ** (ทุกตัวเลือก — ทดสอบบน CI และ Mac จริง) → macOS ใช้ `0.10.21` (Python 3.12 เท่านั้น)
 - COCO class id ของ `cup` = **41** (ใช้ตอน auto-label และตอน fallback)
 - `model.track()` ต้องมี `lap`/`lapx` — โน้ตบุ๊กลง `lapx` ตั้งแต่เซลล์ 0 ไม่งั้น ultralytics
   ไป `pip install` เองกลางเดโม · แอปมี `lap` ใน requirements แล้ว

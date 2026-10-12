@@ -1,7 +1,11 @@
 # pin ให้ตรงกับโน้ตบุ๊ก (docs/01) — เปลี่ยนเมื่อไหร่ต้องทดสอบแอปใหม่ก่อนวันงาน
 ultralytics==8.3.*
 lap==0.5.*          # bytetrack tracker ต้องใช้ (ไม่งั้น ultralytics ไป auto-install กลางเดโม)
-mediapipe==1.0.1
+mediapipe==1.0.1; sys_platform != "darwin"
+# macOS: 1.0.1 สั่ง abort ทั้งโปรเซสตอนสร้างตัวตรวจมือ ("Check failed: service_ Service is unavailable" ที่ DrishtiMetalHelper)
+# ไม่ว่าจะตั้ง delegate CPU / ปิด GPU / โหลดโมเดลแบบไหน (ทดสอบบน macOS 14 CI และ MacBook Pro จริง macOS 26.2) — 0.10.21 ใช้ API เดียวกันและทำงานได้
+# 0.10.21 มี wheel เฉพาะ Python 3.9–3.12 จึงต้องใช้ Python 3.12 บน Mac
+mediapipe==0.10.21; sys_platform == "darwin"
 opencv-python==4.10.*
 pillow==12.*        # HUD วาดตัวหนังสือด้วย PIL + DejaVu (มากับ matplotlib/ultralytics อยู่แล้ว)
 pyyaml==6.*
