@@ -477,7 +477,7 @@ class Analyzer:
                 r = self.model.predict(frame,
                                      imgsz=c.get("imgsz", 480), conf=self.tracker.detection_conf(cup_conf),
                                      device=self.device, classes=[c["cup_class"]],
-                                     verbose=False)[0]
+                                     verbose=False, **PREDICT_ARGS)[0]
                 dets = []
                 confidences = {}
                 for tid, box, score in self.tracker.update(r.boxes, cup_conf):
@@ -573,6 +573,11 @@ def list_cameras(probe=3):
         if ok:
             found.append(i)
     return found or [0]
+
+
+# ultralytics สร้างโฟลเดอร์ผลลัพธ์ทุกครั้งที่ predict (แม้ไม่บันทึกอะไร) โดยอิงไดเรกทอรีทำงาน — แอปที่เปิดจาก Finder
+# มีไดเรกทอรีทำงานเป็น "/" จึงสร้างไม่ได้แล้วตรวจแก้วล้มทุกเฟรม · ชี้ไปโฟลเดอร์ผู้ใช้ และใช้ชื่อเดิมซ้ำ ไม่ให้สะสม predict2, predict3...
+PREDICT_ARGS = dict(project=str(user_dir() / "runs"), name="predict", exist_ok=True)
 
 
 def find_file(rel):

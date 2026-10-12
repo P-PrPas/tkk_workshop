@@ -1057,7 +1057,7 @@ def selftest(out):
         model = vision.load_model(cfg)
         frame = np.zeros((480, 640, 3), np.uint8)
         dev = vision.pick_device(cfg)
-        model.predict(frame, imgsz=cfg.get("imgsz", 480), device=dev, verbose=False)
+        model.predict(frame, imgsz=cfg.get("imgsz", 480), device=dev, verbose=False, **vision.PREDICT_ARGS)
         insp = vision.Inspection(8, 5, 4.0)
         shown = vision.draw(frame.copy(), [(1, [100, 100, 300, 400], False)], [], set(), insp, False,
                             confidences={1: 0.9})
