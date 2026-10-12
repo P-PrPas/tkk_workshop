@@ -1,0 +1,24 @@
+﻿ก่อนติดตั้ง — โปรดอ่าน / Before you install
+===========================================
+
+1) ตัวติดตั้งนี้ยังไม่ได้เซ็นรับรอง (code signing)
+   ถ้า Windows ขึ้นหน้าต่างสีน้ำเงิน "Windows protected your PC" (SmartScreen):
+      กด "More info"  แล้วกด "Run anyway"
+   ทำครั้งเดียวตอนเปิดตัวติดตั้ง ไม่เกี่ยวกับตัวแอปหลังติดตั้งแล้ว
+
+   This installer is not code-signed. If Windows shows "Windows protected your PC",
+   click "More info" and then "Run anyway".
+
+2) ติดตั้งแบบรายผู้ใช้ — ไม่ต้องมีสิทธิ์ผู้ดูแลระบบ
+   ลงที่  %LOCALAPPDATA%\Programs\Inspection Station
+
+3) ครั้งแรกที่เปิดแอป Windows อาจถามสิทธิ์ใช้กล้อง — กด Allow
+   ถ้าเปิดแล้วไม่เห็นภาพ: Settings > Privacy & security > Camera
+   เปิด "Let desktop apps access your camera"
+
+4) ถ้าแอปเปิดไม่ขึ้น ส่งไฟล์นี้มาให้ผู้พัฒนา:
+      %APPDATA%\InspectionStation\app.log
+
+5) แก้ค่าตั้งต้น (เช่น เกณฑ์ตรวจจับ) ได้โดยสร้างไฟล์
+      %APPDATA%\InspectionStation\config.yaml
+   ใส่เฉพาะค่าที่อยากเปลี่ยน เช่น   model_name: cup_v1

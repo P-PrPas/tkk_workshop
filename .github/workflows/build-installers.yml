@@ -1,0 +1,83 @@
+name: Build installers
+
+# สร้างตัวติดตั้งบนเครื่อง Windows / macOS จริง (เครื่องพัฒนาเป็น Linux สร้างให้ไม่ได้)
+#   รันมือ:   Actions > Build installers > Run workflow  → ไฟล์อยู่ที่ Artifacts ของ run นั้น
+#   ปล่อยจริง: git tag app-v1.0.0 && git push origin app-v1.0.0  → แนบตัวติดตั้งกับ Release ชื่อตาม tag
+# ต้องมี Release "models-v2" ที่แนบ cup_v2.pt + cup_v2.onnx ไว้ก่อน (ดู docs/05-installer.md)
+on:
+  workflow_dispatch:
+  push:
+    tags: ["app-v*"]
+
+permissions:
+  contents: write        # แนบไฟล์กับ Release ตอน push tag
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows-latest
+            name: windows
+          - os: macos-14                 # Apple Silicon (arm64) — ไม่มีรุ่น Intel
+            name: macos-arm64
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive          # data/hand_landmarker.task
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: |
+            app/requirements.txt
+            installer/requirements-build.txt
+
+      - name: Install dependencies
+        run: pip install -r app/requirements.txt -r installer/requirements-build.txt
+
+      - name: Install Inno Setup
+        if: runner.os == 'Windows'
+        run: choco install innosetup -y --no-progress
+
+      - name: Download model weights
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          mkdir -p app/models
+          gh release download models-v2 -R "${{ github.repository }}" -p "cup_v2.*" -D app/models
+          gh release download v1 -R "${{ github.repository }}" -p best.pt -O app/models/cup_v1.pt
+          gh release download v1 -R "${{ github.repository }}" -p best.onnx -O app/models/cup_v1.onnx
+          ls -la app/models
+
+      - name: Build (pack, self-test, installer)
+        run: python installer/build.py
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: installer-${{ matrix.name }}
+          path: |
+            dist/InspectionStation-*-setup.exe
+            dist/InspectionStation-*.dmg
+          if-no-files-found: error
+
+  release:
+    needs: build
+    if: startsWith(github.ref, 'refs/tags/app-v')
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: out
+          merge-multiple: true
+      - name: Publish release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "$GITHUB_REF_NAME" out/* -R "${{ github.repository }}" \
+            --title "Inspection Station ${GITHUB_REF_NAME#app-v}" \
+            --notes "Windows (.exe) and macOS Apple Silicon (.dmg) installers. Not code-signed: see docs/05-installer.md for the first-launch steps."
