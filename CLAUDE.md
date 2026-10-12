@@ -22,6 +22,7 @@ tkk_workshop/            ← repo นี้
 ├── docs/                ← 00 ภาพรวม, 01 สเปกโน้ตบุ๊ก, 02 ข้อมูล, 03 โมเดล, 04 แอป
 ├── notebooks/cv101.ipynb
 ├── app/{vision.py,zone.py,overlay.py,app.py,config.yaml}   ← คิด / สถานะโหมด zone / วาดลงเฟรม / แสดงผล
+├── installer/           ← ตัวติดตั้ง Windows (.exe) / macOS (.dmg) — อ่าน docs/05-installer.md
 ├── tools/{build_bigdata.py,ui_preview.py}
 └── data/                ← submodule → github.com/P-PrPas/tkk_workshop-data
 ```
@@ -63,6 +64,7 @@ python tools/build_bigdata.py                # ดึง COCO cup มาเต�
 python app/app.py                            # รันแอป (ต้องมีกล้อง)
 python tools/ui_preview.py                   # เรนเดอร์หน้าจอเป็น docs/app-ui.png (ไม่ต้องมีกล้อง)
 python app/test_vision.py                    # self-check ตรรกะ
+python installer/build.py                    # สร้างตัวติดตั้งของระบบที่รันอยู่ (ปกติให้ GitHub Actions สร้าง)
 git clone --recursive <code repo>            # ฝั่งนักพัฒนา ต้องมี --recursive
 ```
 
