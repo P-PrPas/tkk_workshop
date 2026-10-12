@@ -6,6 +6,7 @@
 ผลลัพธ์: dist/InspectionStation/ (Windows/Linux) · dist/Inspection Station.app (macOS)
 ตัวติดตั้ง (Inno Setup / .dmg) ห่อผลลัพธ์นี้อีกชั้น — ดู installer/build.py
 """
+import os
 import sys
 from pathlib import Path
 
@@ -15,6 +16,9 @@ ROOT = Path(SPECPATH).parent
 APP = ROOT / "app"
 ASSETS = Path(SPECPATH) / "assets"
 VERSION = (ROOT / "VERSION").read_text().strip()
+# macOS: ตั้ง MACOS_CODESIGN_IDENTITY ("Developer ID Application: ...") = เซ็นจริง + hardened runtime · ไม่ตั้ง = เซ็นแบบ ad-hoc
+SIGN_ID = os.environ.get("MACOS_CODESIGN_IDENTITY") or None
+ENTITLEMENTS = str(ROOT / "installer" / "entitlements.plist") if SIGN_ID else None
 
 # ── ไฟล์ที่ต้องมากับแอป (อ่านอย่างเดียว ที่ _internal/ หรือ Contents/Resources/) ──
 datas = [
@@ -50,6 +54,8 @@ exe = EXE(
     name="InspectionStation",
     console=False,                                         # ไม่มีหน้าต่างดำ — ข้อความไปที่ app.log (ดู app.py: to_log_file)
     icon=str(ASSETS / ("icon.ico" if sys.platform == "win32" else "icon.icns")),
+    codesign_identity=SIGN_ID,
+    entitlements_file=ENTITLEMENTS,
 )
 coll = COLLECT(exe, a.binaries, a.datas, name="InspectionStation")
 
@@ -60,6 +66,8 @@ if sys.platform == "darwin":
         icon=str(ASSETS / "icon.icns"),
         bundle_identifier="dev.tkk.inspection-station",
         version=VERSION,
+        codesign_identity=SIGN_ID,
+        entitlements_file=ENTITLEMENTS,
         info_plist={
             "CFBundleDisplayName": "Inspection Station",
             "CFBundleShortVersionString": VERSION,

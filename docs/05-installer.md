@@ -5,26 +5,34 @@
 
 | | Windows | macOS |
 |---|---|---|
-| ไฟล์ | `InspectionStation-<รุ่น>-win-x64-setup.exe` | `InspectionStation-<รุ่น>-macos-arm64.dmg` |
-| เครื่องมือ | PyInstaller → Inno Setup | PyInstaller → dmgbuild |
-| ชิป | x64 | **Apple Silicon (M1–M4) เท่านั้น** (ไม่มีรุ่น Intel) |
+| ไฟล์ | `InspectionStation-<รุ่น>-win-x64-setup.exe` | `InspectionStation-<รุ่น>-macos-arm64.pkg` |
+| รูปแบบ | วิซาร์ดมาตรฐาน (Inno Setup) | วิซาร์ดมาตรฐานของ macOS (`.pkg`) |
+| ภาษา | **เลือกได้** อังกฤษ / ไทย ที่หน้าแรก | ตามภาษาของระบบ (อังกฤษ / ไทย) — macOS ไม่มีตัวเลือกภาษาในตัวติดตั้ง |
+| ชิป | x64 | **Apple Silicon (M1–M4) เท่านั้น** (ไม่มี Mac Intel) |
 | ตรวจแก้ว | ONNX บน CPU (torch ในตัวติดตั้งเป็นรุ่น CPU) | torch + GPU ของชิป (MPS) |
-| เซ็นรับรอง | ยังไม่เซ็น → SmartScreen เตือน | ยังไม่เซ็น → Gatekeeper บล็อกจนกด Open Anyway |
+| เซ็นรับรอง | ยังไม่เซ็น → SmartScreen เตือน | เซ็น + notarize ได้เมื่อมี Apple Developer ID (ดูด้านล่าง) · ยังไม่มี → macOS เตือน |
 
 เครื่องพัฒนาเป็น Linux สร้างตัวติดตั้ง Windows/macOS เองไม่ได้ จึงสร้างบน **GitHub Actions**
 (`.github/workflows/build-installers.yml`) ที่ใช้เครื่อง Windows/macOS จริง
 
 ## ติดตั้ง (สำหรับผู้ใช้)
 
-**Windows** — ดับเบิลคลิก `.exe`
-1. ถ้าขึ้นหน้าต่างสีน้ำเงิน "Windows protected your PC": กด **More info** → **Run anyway** (ตัวติดตั้งยังไม่ได้เซ็นรับรอง)
-2. กด Next ตามหน้าจอ — ติดตั้งแบบรายผู้ใช้ ไม่ต้องมีสิทธิ์ admin ลงที่ `%LOCALAPPDATA%\Programs\Inspection Station`
-3. เปิดจากไอคอนบนเดสก์ท็อป ครั้งแรกกด Allow เมื่อ Windows ถามสิทธิ์กล้อง
+**Windows** — ดับเบิลคลิก `.exe` → เลือกภาษา (English / ไทย) → Next → Install → Finish
+- ถ้าขึ้นหน้าต่างสีน้ำเงิน "Windows protected your PC" (SmartScreen เพราะยังไม่ได้เซ็นรับรอง): กด **More info** → **Run anyway**
+- ติดตั้งแบบรายผู้ใช้ ไม่ต้องใช้สิทธิ์ admin ลงที่ `%LOCALAPPDATA%\Programs\Inspection Station` · ติดตั้งรุ่นใหม่ทับรุ่นเดิมได้เลย · ถอนการติดตั้งที่ Settings → Apps
+- ครั้งแรกที่เปิดแอป กด Allow เมื่อ Windows ถามสิทธิ์กล้อง
 
-**macOS** — เปิด `.dmg` แล้วลากไอคอนไปวางที่ **Applications**
-1. เปิดแอปจาก Launchpad — ถ้า macOS บอกว่าเปิดไม่ได้: **ตั้งค่าระบบ → ความเป็นส่วนตัวและความปลอดภัย** เลื่อนลงล่าง กด **Open Anyway** แล้วเปิดอีกครั้ง
-2. หรือใช้ Terminal: `xattr -dr com.apple.quarantine "/Applications/Inspection Station.app"`
-3. กด **อนุญาต** เมื่อ macOS ถามสิทธิ์กล้อง (ถ้าพลาด: ตั้งค่าระบบ → ความเป็นส่วนตัวและความปลอดภัย → กล้อง)
+**macOS** — ดับเบิลคลิก `.pkg` → Continue → Install (ใส่รหัสผ่านเครื่อง) → Close แล้วเปิดจาก Launchpad
+- แอปที่ติดตั้งผ่านตัวติดตั้งนี้ไม่ถูกบล็อกอีก (สคริปต์หลังติดตั้งล้างธง quarantine ให้) แต่ **ตัวไฟล์ `.pkg` เองที่โหลดจากเว็บ** ยังเจอหน้าต่างเตือนของ macOS ครั้งเดียว จนกว่าจะเซ็น (ดูหัวข้อถัดไป)
+- กด **อนุญาต** เมื่อ macOS ถามสิทธิ์กล้อง (ถ้าพลาด: ตั้งค่าระบบ → ความเป็นส่วนตัวและความปลอดภัย → กล้อง)
+
+### macOS บอกว่า "Apple could not verify … is free of malware" มีแต่ปุ่ม Done / Move to Trash
+เป็นหน้าต่างมาตรฐานของ macOS สำหรับไฟล์ที่ยังไม่ผ่านการรับรอง (notarization) ของ Apple **ไม่ใช่ไวรัส** วิธีผ่าน เลือกอย่างใดอย่างหนึ่ง:
+1. กด Done แล้วไป **ตั้งค่าระบบ → ความเป็นส่วนตัวและความปลอดภัย** เลื่อนลงล่าง กด **Open Anyway** ตรงรายการที่ขึ้นชื่อไฟล์ แล้วใส่รหัสผ่าน
+2. หรือใช้ Terminal (ไม่ผ่านด่านนี้เลย): `sudo installer -pkg ~/Downloads/InspectionStation-1.0.0-macos-arm64.pkg -target /`
+3. หรือล้างธงก่อนเปิด: `xattr -d com.apple.quarantine ~/Downloads/InspectionStation-1.0.0-macos-arm64.pkg`
+
+**ที่ทำให้หายขาดมีทางเดียว:** เซ็นรับรองและ notarize ด้วยบัญชี Apple Developer Program (ราว $99/ปี) ตัวสร้างรองรับแล้ว ดูหัวข้อ "เซ็นรับรองและ notarize" ด้านล่าง
 
 ## ไฟล์ของผู้ใช้ (ตัวแอปที่ติดตั้งแล้วแก้ไม่ได้)
 
@@ -54,7 +62,7 @@ gh release create models-v2 app/models/cup_v2.pt app/models/cup_v2.onnx \
 - **ปล่อยจริง:** `git tag app-v1.0.0 && git push origin app-v1.0.0` → ตัวติดตั้งทั้งสองแนบกับ Release `app-v1.0.0` (เปลี่ยนเลขรุ่นที่ไฟล์ `VERSION` ก่อน)
 
 ในตัวสร้างทำตามนี้ — ถ้าขั้นไหนพังจะไม่ได้ไฟล์:
-`pip install` → ดึงโมเดล → `pyinstaller` → **`--selftest` กับตัวที่แพ็กแล้ว** (โหลดโมเดล + MediaPipe + วาดเฟรม + สร้างวิดเจ็ต Qt) → Inno Setup / dmgbuild
+`pip install` → ดึงโมเดล → `pyinstaller` → **`--selftest` กับตัวที่แพ็กแล้ว** (โหลดโมเดล + MediaPipe + วาดเฟรม + สร้างวิดเจ็ต Qt) → Inno Setup (Windows) / pkgbuild + productbuild (macOS) → ติดตั้งจริงแล้วรันซ้ำ
 
 ### สร้างเองบนเครื่อง Windows หรือ Mac
 ```bash
@@ -68,22 +76,37 @@ Windows ต้องมี [Inno Setup 6](https://jrsoftware.org/isinfo.php) (`c
 ### ไฟล์ในโฟลเดอร์ `installer/`
 | ไฟล์ | หน้าที่ |
 |---|---|
-| `build.py` | ตัวควบคุม: แพ็ก → selftest → ห่อเป็นตัวติดตั้ง |
+| `build.py` | ตัวควบคุม: แพ็ก → selftest → ห่อเป็นตัวติดตั้ง (+ เซ็น/notarize บน macOS ถ้าตั้งค่าไว้) |
 | `inspection_station.spec` | PyInstaller: อะไรเข้าตัวแอป · `.app` + `NSCameraUsageDescription` บน macOS |
-| `windows.iss`, `windows-notes.txt` | หน้าตาและข้อความตัวติดตั้ง Windows (UTF-8 มี BOM — ห้ามบันทึกซ้ำเป็นไม่มี BOM) |
-| `dmg_settings.py` | หน้าต่าง `.dmg` |
+| `windows.iss` | ตัวติดตั้ง Windows (Inno Setup) — ภาษาอังกฤษ + ไทย (`compiler:Languages\Thai.isl` มากับ Inno Setup 6.5+) |
+| `macos/` | ตัวติดตั้ง macOS: `distribution.xml`, หน้าต้อนรับ/สรุป `resources/{en,th}.lproj/*.html`, `scripts/postinstall` |
+| `entitlements.plist` | สิทธิ์ของ hardened runtime (ใช้เมื่อเซ็นด้วย Developer ID) |
 | `make_assets.py` → `assets/` | สร้างไอคอน/ภาพประกอบทั้งหมดจากโค้ด (ผลลัพธ์ commit ไว้แล้ว) |
-| `requirements-build.txt` | PyInstaller, dmgbuild, onnx + onnxruntime (Windows) |
+| `requirements-build.txt` | PyInstaller, onnx + onnxruntime (Windows) |
+
+### เซ็นรับรองและ notarize (macOS) — ให้หน้าต่างเตือนหายไป
+1. สมัคร [Apple Developer Program](https://developer.apple.com/programs/) (ราว $99/ปี)
+2. ที่ developer.apple.com → Certificates สร้าง **Developer ID Application** และ **Developer ID Installer** ส่งออกเป็น `.p12` (ใส่รหัสผ่านเดียวกัน)
+3. ที่ App Store Connect → Users and Access → Integrations สร้าง **API key** (ดาวน์โหลด `.p8` ได้ครั้งเดียว จด Key ID กับ Issuer ID)
+4. ใส่ GitHub Secrets (Settings → Secrets and variables → Actions):
+
+| Secret | ค่า |
+|---|---|
+| `APPLE_CERT_APP_P12_BASE64` | `base64 -i app.p12` ของใบรับรอง Developer ID Application |
+| `APPLE_CERT_INSTALLER_P12_BASE64` | เช่นเดียวกัน ของ Developer ID Installer |
+| `APPLE_CERT_PASSWORD` | รหัสผ่านของไฟล์ `.p12` |
+| `APPLE_API_KEY_P8` | เนื้อหาไฟล์ `.p8` ทั้งไฟล์ |
+| `APPLE_API_KEY_ID`, `APPLE_API_ISSUER` | จากข้อ 3 |
+
+พอมี `APPLE_CERT_APP_P12_BASE64` workflow จะนำเข้าใบรับรอง เซ็นแอปด้วย hardened runtime เซ็น `.pkg` ส่งให้ Apple ตรวจ (`notarytool`) และแนบผลกลับ (`stapler`) เอง — ส่วนนี้ **ยังไม่เคยรันจริง** (ยังไม่มีบัญชี) ครั้งแรกอาจต้องแก้เล็กน้อย
+Windows: ถ้าต้องการให้ SmartScreen หายต้องซื้อใบรับรอง code signing (หรือ Azure Trusted Signing) แล้วเพิ่ม `SignTool` ใน `windows.iss`
 
 ## เรื่องที่ควรรู้ / ยังไม่ได้ทำ
 
-- **ยังไม่เซ็นรับรอง:** ถ้ามีใบรับรอง Windows หรือ Apple Developer ID ให้เพิ่มขั้นเซ็นใน `windows.iss` (`SignTool`) และใน `inspection_station.spec` (`codesign_identity`, `entitlements_file`) แล้ว notarize `.dmg` — เมื่อเซ็นแล้วคำเตือนข้างต้นหายไป
 - **Mac Intel ไม่รองรับ:** torch รุ่นสุดท้ายที่มี wheel สำหรับ Mac Intel คือ 2.2 ต้องแยกการสร้างและทดสอบต่างหาก
 - **Windows ไม่ใช้ GPU NVIDIA:** torch ในตัวติดตั้งเป็นรุ่น CPU (รุ่น CUDA ทำให้ตัวติดตั้งใหญ่หลาย GB) ตรวจแก้วด้วย ONNX บน CPU แทน
 - **ไม่มีการอัปเดตอัตโนมัติ:** รุ่นใหม่ = ติดตั้งทับตัวเดิม (Windows: `AppId` เดิม จึงอัปเกรดทับได้ · macOS: ลากทับ)
-- **ผลทดสอบบน GitHub Actions** (ดู run ของ PR ที่เพิ่มตัวติดตั้ง):
-  - Windows: แพ็ก → selftest (โหลด `cup_v2.onnx` บน CPU + MediaPipe + วาดเฟรม + Qt) → Inno Setup สำเร็จ ได้ `.exe` ประมาณ 340 MB
-  - macOS arm64: แพ็ก (เซ็นแบบ ad-hoc) → selftest → dmgbuild สำเร็จ ได้ `.dmg` ประมาณ 449 MB
-  - เครื่องเสมือน macOS ของ GitHub ไม่มี GPU/Metal: selftest จึงใช้ CPU และ **ตัวตรวจมือ MediaPipe ล้ม** (ขึ้น `HANDS NOT VERIFIED` ใน log) — ตรวจเฉพาะส่วนนี้บน Mac จริงเท่านั้น
-- **ยังไม่มีใครตรวจ:** หน้าตาตัวติดตั้งจริง, SmartScreen / Gatekeeper, หน้าต่างขอสิทธิ์กล้อง, ความเร็ว ONNX บน CPU ของเครื่อง Windows จริง
-- **ก่อนแจกทีม sales ต้องลองบน Mac จริงหนึ่งเครื่อง:** ติดตั้งจาก `.dmg` → เปิดแอป → เห็นภาพกล้อง → มือถูกตรวจ (กรอบโครงมือขึ้น) → เปิด/ปิดโหมด zone ได้ ถ้ามือไม่ขึ้นหรือแอปดับ ส่ง `app.log` (ดูตารางไฟล์ของผู้ใช้) มาให้ดู
+- **ตัวสร้างทดสอบ "ติดตั้งจริงแล้วรัน" ให้เอง** ทุกครั้ง: Windows ติดตั้งแบบเงียบเป็นภาษาไทย → รัน `--selftest` ของแอปที่ติดตั้ง → ถอนการติดตั้ง · macOS ติดตั้ง `.pkg` ด้วย `installer` → `codesign --verify` → ตรวจว่าไม่มีธง quarantine → รัน `--selftest` ของแอปที่ติดตั้ง
+- **เครื่องเสมือน macOS ของ GitHub ไม่มี GPU/Metal:** selftest ใช้ CPU และ **ตัวตรวจมือ MediaPipe ล้ม** (ขึ้น `HANDS NOT VERIFIED` ใน log) — ตรวจเฉพาะส่วนนี้บน Mac จริงเท่านั้น
+- **ยังไม่มีใครตรวจ:** หน้าตาตัวติดตั้งจริงทั้งสองระบบ, หน้าต่างเตือนของ macOS/SmartScreen, หน้าต่างขอสิทธิ์กล้อง, ความเร็ว ONNX บน CPU ของเครื่อง Windows จริง
+- **ก่อนแจกทีม sales ต้องลองบน Mac จริงหนึ่งเครื่อง:** ติดตั้งจาก `.pkg` → เปิดแอป → เห็นภาพกล้อง → มือถูกตรวจ (กรอบโครงมือขึ้น) → เปิด/ปิดโหมด zone ได้ ถ้ามือไม่ขึ้นหรือแอปดับ ส่ง `app.log` (ดูตารางไฟล์ของผู้ใช้) มาให้ดู

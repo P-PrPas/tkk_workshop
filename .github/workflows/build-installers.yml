@@ -2,6 +2,7 @@ name: Build installers
 
 # สร้างตัวติดตั้งบนเครื่อง Windows / macOS จริง (เครื่องพัฒนาเป็น Linux สร้างให้ไม่ได้)
 #   รันมือ:   Actions > Build installers > Run workflow  → ไฟล์อยู่ที่ Artifacts ของ run นั้น (ต้องมีไฟล์นี้บน main ก่อนถึงจะสั่งได้)
+#   macOS เซ็น + notarize เองเมื่อมี secrets ครบ (ดู docs/05-installer.md) — ไม่มี = ตัวติดตั้งที่ยังไม่เซ็น
 #   ปล่อยจริง: git tag app-v1.0.0 && git push origin app-v1.0.0  → แนบตัวติดตั้งกับ Release ชื่อตาม tag
 # ต้องมี Release "models-v2" ที่แนบ cup_v2.pt + cup_v2.onnx ไว้ก่อน (ดู docs/05-installer.md)
 on:
@@ -25,6 +26,8 @@ jobs:
           - os: macos-14                 # Apple Silicon (arm64) — ไม่มีรุ่น Intel
             name: macos-arm64
     runs-on: ${{ matrix.os }}
+    env:
+      APPLE_SIGNING: ${{ secrets.APPLE_CERT_APP_P12_BASE64 != '' && 'yes' || 'no' }}
     steps:
       - uses: actions/checkout@v4
         with:
@@ -56,6 +59,32 @@ jobs:
           gh release download v1 -R "${{ github.repository }}" -p best.onnx -O app/models/cup_v1.onnx
           ls -la app/models
 
+      - name: Import Apple signing certificates
+        if: runner.os == 'macOS' && env.APPLE_SIGNING == 'yes'
+        shell: bash
+        env:
+          APP_P12: ${{ secrets.APPLE_CERT_APP_P12_BASE64 }}
+          PKG_P12: ${{ secrets.APPLE_CERT_INSTALLER_P12_BASE64 }}
+          P12_PASSWORD: ${{ secrets.APPLE_CERT_PASSWORD }}
+          API_KEY: ${{ secrets.APPLE_API_KEY_P8 }}
+        run: |
+          KC="$RUNNER_TEMP/build.keychain-db"; KP="$(uuidgen)"
+          security create-keychain -p "$KP" "$KC"
+          security set-keychain-settings -lut 21600 "$KC"
+          security unlock-keychain -p "$KP" "$KC"
+          echo "$APP_P12" | base64 --decode > "$RUNNER_TEMP/app.p12"
+          echo "$PKG_P12" | base64 --decode > "$RUNNER_TEMP/pkg.p12"
+          security import "$RUNNER_TEMP/app.p12" -P "$P12_PASSWORD" -A -t cert -f pkcs12 -k "$KC"
+          security import "$RUNNER_TEMP/pkg.p12" -P "$P12_PASSWORD" -A -t cert -f pkcs12 -k "$KC"
+          security set-key-partition-list -S apple-tool:,apple: -k "$KP" "$KC"
+          security list-keychains -d user -s "$KC" login.keychain-db
+          echo "MACOS_CODESIGN_IDENTITY=$(security find-identity -v -p codesigning "$KC" | grep 'Developer ID Application' | head -1 | sed -E 's/.*"(.*)"/\1/')" >> "$GITHUB_ENV"
+          echo "MACOS_INSTALLER_IDENTITY=$(security find-identity -v "$KC" | grep 'Developer ID Installer' | head -1 | sed -E 's/.*"(.*)"/\1/')" >> "$GITHUB_ENV"
+          echo "$API_KEY" > "$RUNNER_TEMP/AuthKey.p8"
+          echo "APPLE_API_KEY_PATH=$RUNNER_TEMP/AuthKey.p8" >> "$GITHUB_ENV"
+          echo "APPLE_API_KEY_ID=${{ secrets.APPLE_API_KEY_ID }}" >> "$GITHUB_ENV"
+          echo "APPLE_API_ISSUER=${{ secrets.APPLE_API_ISSUER }}" >> "$GITHUB_ENV"
+
       - name: Build (pack, self-test, installer)
         env:
           # GitHub's macOS VMs have no Metal service and MediaPipe's hand tracker aborts there; the self-test then
@@ -63,12 +92,45 @@ jobs:
           INSPECTION_SELFTEST_ALLOW_NO_HANDS: ${{ runner.os == 'macOS' && '1' || '0' }}
         run: python installer/build.py
 
+      - name: Install the .pkg for real and check the installed app (macOS)
+        if: runner.os == 'macOS'
+        shell: bash
+        run: |
+          PKG=$(ls dist/InspectionStation-*.pkg)
+          sudo installer -pkg "$PKG" -target /
+          APP="/Applications/Inspection Station.app"
+          test -d "$APP"
+          codesign --verify --deep --strict --verbose=2 "$APP"
+          echo "quarantine attribute after install: [$(xattr -p com.apple.quarantine "$APP" 2>/dev/null || true)] (empty = good)"
+          spctl --assess --type execute --verbose=2 "$APP" || echo "(Gatekeeper rejects an app that is not notarized: expected until signing is set up)"
+          INSPECTION_SELFTEST_ALLOW_NO_HANDS=1 "$APP/Contents/MacOS/InspectionStation" --selftest "$RUNNER_TEMP/installed.txt" || true
+          cat "$RUNNER_TEMP/installed.txt"
+          grep -q "SELFTEST OK" "$RUNNER_TEMP/installed.txt"
+
+      - name: Install the .exe silently in Thai and check the installed app (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $setup = Get-ChildItem dist\InspectionStation-*-setup.exe | Select-Object -First 1
+          $dir = Join-Path $env:RUNNER_TEMP "InspectionStationTest"
+          Start-Process -FilePath $setup.FullName -ArgumentList "/VERYSILENT","/SUPPRESSMSGBOXES","/NORESTART","/LANG=thai","/DIR=$dir" -Wait
+          if (-not (Test-Path "$dir\InspectionStation.exe")) { throw "installer did not install the app" }
+          if (-not (Test-Path "$dir\unins000.exe")) { throw "uninstaller missing" }
+          $out = Join-Path $env:RUNNER_TEMP "installed.txt"
+          Start-Process -FilePath "$dir\InspectionStation.exe" -ArgumentList "--selftest","$out" -Wait
+          Get-Content $out
+          if (-not (Select-String -Path $out -Pattern "SELFTEST OK" -Quiet)) { throw "installed app self-test failed" }
+          Start-Process -FilePath "$dir\unins000.exe" -ArgumentList "/VERYSILENT","/SUPPRESSMSGBOXES" -Wait
+          $gone = $false
+          1..60 | ForEach-Object { if (-not (Test-Path "$dir\InspectionStation.exe")) { $gone = $true; return }; Start-Sleep -Seconds 1 }
+          if (-not $gone) { throw "uninstall left the app behind" }
+
       - uses: actions/upload-artifact@v4
         with:
           name: installer-${{ matrix.name }}
           path: |
             dist/InspectionStation-*-setup.exe
-            dist/InspectionStation-*.dmg
+            dist/InspectionStation-*.pkg
           if-no-files-found: error
 
   release:
@@ -86,4 +148,4 @@ jobs:
         run: |
           gh release create "$GITHUB_REF_NAME" out/* -R "${{ github.repository }}" \
             --title "Inspection Station ${GITHUB_REF_NAME#app-v}" \
-            --notes "Windows (.exe) and macOS Apple Silicon (.dmg) installers. Not code-signed: see docs/05-installer.md for the first-launch steps."
+            --notes "Windows (.exe) and macOS Apple Silicon (.pkg) installers. Not code-signed: see docs/05-installer.md for the first-launch steps."

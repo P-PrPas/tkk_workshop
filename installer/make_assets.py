@@ -1,4 +1,4 @@
-"""สร้างไอคอนและภาพประกอบตัวติดตั้งทั้งหมดจากโค้ด (โทนเดียวกับแอป: พื้นเข้ม · เขียว #3DD68C · ไม้บรรทัด)
+"""สร้างไอคอนและภาพประกอบตัวติดตั้งทั้งหมดจากโค้ด (ตราสินค้าสีเขียว #3DD68C — ภาพวิซาร์ดโทนสว่างเรียบ)
 
     python installer/make_assets.py        # เขียนทับ installer/assets/* (ไฟล์ผลลัพธ์ commit ไว้ ตัวสร้างไม่ต้องรันสคริปต์นี้)
 
@@ -76,54 +76,43 @@ def icon(size=1024):
 
 
 def wizard(w, h):
-    """แถบซ้ายของตัวติดตั้ง Windows (164x314 ที่ 100%)"""
+    """ภาพแถบซ้ายของวิซาร์ด Windows (164x314 ที่ 100%) — โทนสว่างเรียบ ตราสินค้ากับชื่อ ไม่มีข้อความที่ผูกกับภาษา"""
     W, H = w * S, h * S
-    img = gradient(W, H, (14, 18, 26), GROUND)
+    img = gradient(W, H, (250, 251, 252), (232, 236, 241))
     d = ImageDraw.Draw(img)
-    mark(img, W / 2, H * 0.2, W * 0.46)
-    k = W * 0.46 / 2
-    cx, cy = W / 2, H * 0.2
-    d.line([(cx - k * 0.42, cy + k * 0.02), (cx - k * 0.1, cy + k * 0.34), (cx + k * 0.46, cy - k * 0.3)], fill=GROUND, width=int(W * 0.026), joint="curve")
-    ruler(d, W - int(W * 0.07), int(H * 0.04), int(H * 0.96), int(H * 0.0225), 5, int(W * 0.018), 1, LINE)
-    f1, f2 = font(BOLD, W * 0.092), font(BOLD, W * 0.092)
-    spaced(d, (W * 0.12, H * 0.6), "INSPECTION", f1, TXT, W * 0.012)
-    spaced(d, (W * 0.12, H * 0.6 + W * 0.125), "STATION", f2, GREEN, W * 0.012)
-    d.line([(W * 0.12, H * 0.6 + W * 0.3), (W * 0.12 + W * 0.18, H * 0.6 + W * 0.3)], fill=AMBER, width=max(2, int(W * 0.012)))
-    d.text((W * 0.12, H * 0.6 + W * 0.36), "เช็กลิสต์ผู้ตรวจ", font=font(THAI, W * 0.085), fill=DIM)
-    d.text((W * 0.12, H * 0.6 + W * 0.50), "Zone  A → B", font=font(REG, W * 0.075), fill=DIM)
+    cx, cy = W / 2, H * 0.36
+    mark(img, cx, cy, W * 0.5)
+    k = W * 0.5 / 2
+    d.line([(cx - k * 0.42, cy + k * 0.02), (cx - k * 0.1, cy + k * 0.34), (cx + k * 0.46, cy - k * 0.3)], fill=(250, 251, 252), width=int(W * 0.03), joint="curve")
+    for x, y in ((cx - k * 0.42, cy + k * 0.02), (cx + k * 0.46, cy - k * 0.3)):
+        r = W * 0.015
+        d.ellipse([x - r, y - r, x + r, y + r], fill=(250, 251, 252))
+    f = font(BOLD, W * 0.105)
+    for i, word in enumerate(("Inspection", "Station")):
+        d.text((cx, H * 0.58 + i * W * 0.14), word, font=f, fill=(28, 36, 48), anchor="ma")
     return img.resize((w, h), Image.LANCZOS)
 
 
 def wizard_small(w):
-    """ตราเล็กมุมขวาบนของหน้าตัวติดตั้ง (55x55)"""
+    """ตราเล็กมุมขวาบนของหน้าตัวติดตั้ง (55x55) บนพื้นขาว"""
     W = w * S
-    img = Image.new("RGB", (W, W), PANEL)
+    img = Image.new("RGB", (W, W), (255, 255, 255))
     d = ImageDraw.Draw(img)
-    mark(img, W / 2, W / 2, W * 0.56)
-    k = W * 0.56 / 2
-    d.line([(W / 2 - k * 0.42, W / 2 + k * 0.02), (W / 2 - k * 0.1, W / 2 + k * 0.34), (W / 2 + k * 0.46, W / 2 - k * 0.3)], fill=PANEL, width=int(W * 0.06), joint="curve")
+    mark(img, W / 2, W / 2, W * 0.62)
+    k = W * 0.62 / 2
+    d.line([(W / 2 - k * 0.42, W / 2 + k * 0.02), (W / 2 - k * 0.1, W / 2 + k * 0.34), (W / 2 + k * 0.46, W / 2 - k * 0.3)], fill=(255, 255, 255), width=int(W * 0.06), joint="curve")
     return img.resize((w, w), Image.LANCZOS)
 
 
-def dmg_background(w=660, h=400):
-    """พื้นหลังหน้าต่าง .dmg: ลากไอคอนแอปไปที่ Applications + วิธีเปิดครั้งแรก (ตัวติดตั้งยังไม่ได้เซ็นรับรอง)"""
-    k = 2                                                  # ผลิตที่ 2x (retina) — Finder อ่าน dpi 144 แล้วแสดงขนาด 660x400
-    W, H = w * k * 2, h * k * 2
-    img = gradient(W, H, (14, 18, 26), GROUND)
+def pkg_logo(size=256):
+    """โลโก้โปร่งใสสำหรับพื้นหลังหน้าต่างตัวติดตั้ง macOS (.pkg) — ใช้ได้ทั้งโหมดสว่าง/มืด"""
+    W = size * S
+    img = Image.new("RGBA", (W, W), (0, 0, 0, 0))
     d = ImageDraw.Draw(img)
-    u = W / 660
-    mark(img, 46 * u, 44 * u, 22 * u)
-    spaced(d, (70 * u, 30 * u), "INSPECTION STATION", font(BOLD, 15 * u), TXT, 2.4 * u)
-    d.text((70 * u, 54 * u), "ลากไอคอนแอปไปวางที่ Applications เพื่อติดตั้ง", font=font(THAI, 13 * u), fill=DIM)
-    ax0, ax1, ay = 262 * u, 398 * u, 190 * u                # ลูกศรระหว่างไอคอนสองตัว (ไอคอนอยู่ที่ x=180 กับ x=480)
-    d.line([(ax0, ay), (ax1, ay)], fill=GREEN, width=int(4 * u))
-    d.polygon([(ax1 + 14 * u, ay), (ax1 - 4 * u, ay - 12 * u), (ax1 - 4 * u, ay + 12 * u)], fill=GREEN)
-    ruler(d, 18 * u, 100 * u, 380 * u, 12 * u, 5, 3, int(u), LINE)
-    d.rounded_rectangle([34 * u, 296 * u, 626 * u, 372 * u], radius=int(10 * u), fill=PANEL, outline=LINE, width=int(1.2 * u))
-    d.text((50 * u, 304 * u), "เปิดครั้งแรกแล้ว macOS ไม่ยอมเปิดแอป? (ตัวติดตั้งยังไม่ได้เซ็นรับรอง)", font=font(THAI, 12.5 * u), fill=AMBER)
-    d.text((50 * u, 328 * u), "ตั้งค่าระบบ › ความเป็นส่วนตัวและความปลอดภัย › เลื่อนลง กด “Open Anyway”", font=font(THAI, 12 * u), fill=TXT)
-    d.text((50 * u, 348 * u), "แล้วอนุญาตการใช้กล้องเมื่อมีหน้าต่างถาม", font=font(THAI, 12 * u), fill=DIM)
-    return img.resize((w * k, h * k), Image.LANCZOS)
+    mark(img, W / 2, W / 2, W * 0.8)
+    k = W * 0.8 / 2
+    d.line([(W / 2 - k * 0.42, W / 2 + k * 0.02), (W / 2 - k * 0.1, W / 2 + k * 0.34), (W / 2 + k * 0.46, W / 2 - k * 0.3)], fill=(0, 0, 0, 0), width=int(W * 0.05), joint="curve")
+    return img.resize((size, size), Image.LANCZOS)
 
 
 def main():
@@ -136,7 +125,7 @@ def main():
     wizard(328, 628).save(OUT / "wizard_large_2x.bmp")
     wizard_small(55).save(OUT / "wizard_small.bmp")
     wizard_small(110).save(OUT / "wizard_small_2x.bmp")
-    dmg_background().save(OUT / "dmg_background.png", dpi=(144, 144))
+    pkg_logo(256).save(OUT / "pkg_logo.png")
     print("wrote", *sorted(p.name for p in OUT.iterdir()))
 
 

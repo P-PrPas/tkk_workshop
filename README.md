@@ -125,7 +125,7 @@ tkk_workshop/
 │   ├── config.yaml           # every value you might tune in the room
 │   ├── requirements.txt      # pinned to match the notebook
 │   └── test_vision.py        # logic self-check, no camera needed
-├── installer/                # packaging: PyInstaller spec, Windows (Inno Setup) and macOS (.dmg) installers
+├── installer/                # packaging: PyInstaller spec, Windows (Inno Setup) and macOS (.pkg) installers
 ├── tools/                    # build the big dataset, train the good model, profile, debug
 ├── docs/                     # design notes (00–05, Thai) — read 00 first
 └── data/                     # git submodule → in-room images + labels + model mirror
@@ -236,9 +236,9 @@ python app/test_vision.py
 
 ### C · Install the packaged app (Windows / macOS)
 
-For people who just want to use it: download the installer (`.exe` for Windows, `.dmg` for Apple Silicon Macs) from the
+For people who just want to use it: download the installer (`.exe` for Windows, `.pkg` for Apple Silicon Macs) from the
 [Releases](https://github.com/P-PrPas/tkk_workshop/releases) page and open it. Python, the models and everything else
-are inside, and no internet is needed. The installers are **not code-signed yet**, so the first launch needs one extra
+are inside, and no internet is needed. Both are standard installer wizards (English / Thai on Windows; the Mac one follows the system language). They are **not code-signed yet**, so the first open needs one extra
 click; the steps, and how the installers are built, are in [`docs/05-installer.md`](docs/05-installer.md).
 
 ---

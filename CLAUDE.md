@@ -22,7 +22,7 @@ tkk_workshop/            ← repo นี้
 ├── docs/                ← 00 ภาพรวม, 01 สเปกโน้ตบุ๊ก, 02 ข้อมูล, 03 โมเดล, 04 แอป
 ├── notebooks/cv101.ipynb
 ├── app/{vision.py,zone.py,overlay.py,app.py,config.yaml}   ← คิด / สถานะโหมด zone / วาดลงเฟรม / แสดงผล
-├── installer/           ← ตัวติดตั้ง Windows (.exe) / macOS (.dmg) — อ่าน docs/05-installer.md
+├── installer/           ← ตัวติดตั้ง Windows (.exe) / macOS (.pkg) — อ่าน docs/05-installer.md
 ├── tools/{build_bigdata.py,ui_preview.py}
 └── data/                ← submodule → github.com/P-PrPas/tkk_workshop-data
 ```
