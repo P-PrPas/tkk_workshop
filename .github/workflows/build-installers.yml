@@ -1,13 +1,15 @@
 name: Build installers
 
 # สร้างตัวติดตั้งบนเครื่อง Windows / macOS จริง (เครื่องพัฒนาเป็น Linux สร้างให้ไม่ได้)
-#   รันมือ:   Actions > Build installers > Run workflow  → ไฟล์อยู่ที่ Artifacts ของ run นั้น
+#   รันมือ:   Actions > Build installers > Run workflow  → ไฟล์อยู่ที่ Artifacts ของ run นั้น (ต้องมีไฟล์นี้บน main ก่อนถึงจะสั่งได้)
 #   ปล่อยจริง: git tag app-v1.0.0 && git push origin app-v1.0.0  → แนบตัวติดตั้งกับ Release ชื่อตาม tag
 # ต้องมี Release "models-v2" ที่แนบ cup_v2.pt + cup_v2.onnx ไว้ก่อน (ดู docs/05-installer.md)
 on:
   workflow_dispatch:
   push:
     tags: ["app-v*"]
+  pull_request:                          # แก้ตัวติดตั้งแล้วเปิด PR = สร้างให้ดูเลยว่ายังพังไหม (ไม่รันทุก PR: ใช้เครื่อง Windows/macOS นานเป็นสิบนาที)
+    paths: ["installer/**", ".github/workflows/build-installers.yml", "VERSION"]
 
 permissions:
   contents: write        # แนบไฟล์กับ Release ตอน push tag
