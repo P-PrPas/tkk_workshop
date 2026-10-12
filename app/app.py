@@ -1015,6 +1015,31 @@ def boot_splash(app):
     return box
 
 
+def selftest_hands(out):
+    """โหมดลูกของ --selftest: โหลดตัวตรวจมือ MediaPipe แล้วตรวจเฟรมว่างหนึ่งใบ — แยกโปรเซสเพราะ MediaPipe บน macOS
+    ที่ไม่มีบริการ Metal (เครื่องเสมือนของ CI) สั่ง abort ทั้งโปรเซส ซึ่ง try/except จับไม่ได้"""
+    import vision
+    import mediapipe as mp
+    import numpy as np
+    hands = vision.load_hand_landmarker(vision.load_config())
+    hands.detect_for_video(mp.Image(image_format=mp.ImageFormat.SRGB, data=np.zeros((480, 640, 3), np.uint8)), 1)
+    Path(out).write_text("HANDS OK\n", encoding="utf-8")
+    return 0
+
+
+def selftest_hands_in_child(out):
+    import subprocess
+    marker = Path(str(out) + ".hands")
+    marker.unlink(missing_ok=True)
+    cmd = [sys.executable] + ([] if FROZEN else [str(Path(__file__).resolve())]) + ["--selftest-hands", str(marker)]
+    r = subprocess.run(cmd, timeout=300)
+    if r.returncode == 0 and marker.exists():
+        return "HANDS OK"
+    if os.environ.get("INSPECTION_SELFTEST_ALLOW_NO_HANDS") == "1":      # ตั้งเฉพาะ macOS บน CI (เครื่องเสมือนไม่มี Metal)
+        return f"HANDS NOT VERIFIED: the hand tracker process died (exit {r.returncode}); allowed on this runner only"
+    raise RuntimeError(f"hand tracker self-test failed (exit {r.returncode})")
+
+
 def selftest(out):
     """`InspectionStation --selftest <ไฟล์>` — โหลดโมเดล + MediaPipe + วาดเฟรมหนึ่งใบ + สร้างวิดเจ็ต Qt โดยไม่ต้องมีกล้อง/จอ
     ตัวสร้างติดตั้ง (CI) ใช้เช็กว่าที่แพ็กมาครบจริง · เขียนผลลงไฟล์เพราะแอปแบบไม่มี console พิมพ์ออกหน้าจอไม่ได้"""
@@ -1030,11 +1055,9 @@ def selftest(out):
         cfg = vision.load_config()
         cfg["model_path"] = vision.resolve_model_path(cfg)
         model = vision.load_model(cfg)
-        hands = vision.load_hand_landmarker(cfg)
         frame = np.zeros((480, 640, 3), np.uint8)
         dev = vision.pick_device(cfg)
         model.predict(frame, imgsz=cfg.get("imgsz", 480), device=dev, verbose=False)
-        hands.detect_for_video(mp.Image(image_format=mp.ImageFormat.SRGB, data=frame), 1)
         insp = vision.Inspection(8, 5, 4.0)
         shown = vision.draw(frame.copy(), [(1, [100, 100, 300, 400], False)], [], set(), insp, False,
                             confidences={1: 0.9})
@@ -1042,7 +1065,8 @@ def selftest(out):
         view.resize(640, 360)
         view.set_frame(shown)
         lines += [f"SELFTEST OK model={cfg['model_path']} device={dev}",
-                  f"python={sys.version.split()[0]} frozen={FROZEN} resources={vision.HERE}"]
+                  f"python={sys.version.split()[0]} frozen={FROZEN} resources={vision.HERE}",
+                  selftest_hands_in_child(out)]
         code = 0
     except BaseException:
         lines += ["SELFTEST FAILED", traceback.format_exc()]
@@ -1053,6 +1077,9 @@ def selftest(out):
 
 def main():
     multiprocessing.freeze_support()           # PyInstaller + torch/ultralytics อาจเปิดโปรเซสลูก
+    if "--selftest-hands" in sys.argv:
+        i = sys.argv.index("--selftest-hands")
+        raise SystemExit(selftest_hands(sys.argv[i + 1]))
     if "--selftest" in sys.argv:
         i = sys.argv.index("--selftest")
         raise SystemExit(selftest(sys.argv[i + 1] if len(sys.argv) > i + 1 else "selftest.txt"))

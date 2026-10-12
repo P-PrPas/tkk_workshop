@@ -57,6 +57,10 @@ jobs:
           ls -la app/models
 
       - name: Build (pack, self-test, installer)
+        env:
+          # GitHub's macOS VMs have no Metal service and MediaPipe's hand tracker aborts there; the self-test then
+          # reports "HANDS NOT VERIFIED". Real Macs must be checked by hand (see docs/05-installer.md).
+          INSPECTION_SELFTEST_ALLOW_NO_HANDS: ${{ runner.os == 'macOS' && '1' || '0' }}
         run: python installer/build.py
 
       - uses: actions/upload-artifact@v4
