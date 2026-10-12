@@ -4,7 +4,7 @@ import os
 import sys
 from pathlib import Path
 
-APP_DIR_NAME = "InspectionStation"
+APP_DIR_NAME = "TKKWorkshop"
 
 
 def user_dir():

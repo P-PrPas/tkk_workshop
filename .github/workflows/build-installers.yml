@@ -92,14 +92,14 @@ jobs:
         if: runner.os == 'macOS'
         shell: bash
         run: |
-          PKG=$(ls dist/InspectionStation-*.pkg)
+          PKG=$(ls dist/TKKWorkshop-*.pkg)
           sudo installer -pkg "$PKG" -target /
-          APP="/Applications/Inspection Station.app"
+          APP="/Applications/TKK Workshop.app"
           test -d "$APP"
           codesign --verify --deep --strict --verbose=2 "$APP"
           echo "quarantine attribute after install: [$(xattr -p com.apple.quarantine "$APP" 2>/dev/null || true)] (empty = good)"
           spctl --assess --type execute --verbose=2 "$APP" || echo "(Gatekeeper rejects an app that is not notarized: expected until signing is set up)"
-          "$APP/Contents/MacOS/InspectionStation" --selftest "$RUNNER_TEMP/installed.txt" || true
+          "$APP/Contents/MacOS/TKKWorkshop" --selftest "$RUNNER_TEMP/installed.txt" || true
           cat "$RUNNER_TEMP/installed.txt"
           grep -q "SELFTEST OK" "$RUNNER_TEMP/installed.txt"
 
@@ -107,26 +107,26 @@ jobs:
         if: runner.os == 'Windows'
         shell: pwsh
         run: |
-          $setup = Get-ChildItem dist\InspectionStation-*-setup.exe | Select-Object -First 1
-          $dir = Join-Path $env:RUNNER_TEMP "InspectionStationTest"
+          $setup = Get-ChildItem dist\TKKWorkshop-*-setup.exe | Select-Object -First 1
+          $dir = Join-Path $env:RUNNER_TEMP "TKKWorkshopTest"
           Start-Process -FilePath $setup.FullName -ArgumentList "/VERYSILENT","/SUPPRESSMSGBOXES","/NORESTART","/LANG=thai","/DIR=$dir" -Wait
-          if (-not (Test-Path "$dir\InspectionStation.exe")) { throw "installer did not install the app" }
+          if (-not (Test-Path "$dir\TKKWorkshop.exe")) { throw "installer did not install the app" }
           if (-not (Test-Path "$dir\unins000.exe")) { throw "uninstaller missing" }
           $out = Join-Path $env:RUNNER_TEMP "installed.txt"
-          Start-Process -FilePath "$dir\InspectionStation.exe" -ArgumentList "--selftest","$out" -Wait
+          Start-Process -FilePath "$dir\TKKWorkshop.exe" -ArgumentList "--selftest","$out" -Wait
           Get-Content $out
           if (-not (Select-String -Path $out -Pattern "SELFTEST OK" -Quiet)) { throw "installed app self-test failed" }
           Start-Process -FilePath "$dir\unins000.exe" -ArgumentList "/VERYSILENT","/SUPPRESSMSGBOXES" -Wait
           $gone = $false
-          1..60 | ForEach-Object { if (-not (Test-Path "$dir\InspectionStation.exe")) { $gone = $true; return }; Start-Sleep -Seconds 1 }
+          1..60 | ForEach-Object { if (-not (Test-Path "$dir\TKKWorkshop.exe")) { $gone = $true; return }; Start-Sleep -Seconds 1 }
           if (-not $gone) { throw "uninstall left the app behind" }
 
       - uses: actions/upload-artifact@v4
         with:
           name: installer-${{ matrix.name }}
           path: |
-            dist/InspectionStation-*-setup.exe
-            dist/InspectionStation-*.pkg
+            dist/TKKWorkshop-*-setup.exe
+            dist/TKKWorkshop-*.pkg
           if-no-files-found: error
 
   release:
@@ -143,5 +143,5 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           gh release create "$GITHUB_REF_NAME" out/* -R "${{ github.repository }}" \
-            --title "Inspection Station ${GITHUB_REF_NAME#app-v}" \
+            --title "TKK Workshop ${GITHUB_REF_NAME#app-v}" \
             --notes "Windows (.exe) and macOS Apple Silicon (.pkg) installers. Not code-signed: see docs/05-installer.md for the first-launch steps."

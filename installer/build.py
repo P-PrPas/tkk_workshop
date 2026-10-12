@@ -5,7 +5,7 @@
     python installer/build.py --no-package     # หยุดหลังแพ็ก+ทดสอบ (Linux หรือเครื่องที่ไม่มี Inno Setup)
 
 ก่อนรัน: วางโมเดลไว้ที่ app/models/ (cup_v2.pt เป็นอย่างน้อย · เครื่อง Windows ใส่ .onnx ด้วย) และ git submodule update --init
-ผลลัพธ์: dist/InspectionStation-<VERSION>-win-x64-setup.exe · dist/InspectionStation-<VERSION>-macos-arm64.pkg
+ผลลัพธ์: dist/TKKWorkshop-<VERSION>-win-x64-setup.exe · dist/TKKWorkshop-<VERSION>-macos-arm64.pkg
 macOS เซ็น + notarize ให้เมื่อมีตัวแปรสภาพแวดล้อมครบ (ดู docs/05-installer.md): MACOS_CODESIGN_IDENTITY, MACOS_INSTALLER_IDENTITY,
 APPLE_API_KEY_PATH, APPLE_API_KEY_ID, APPLE_API_ISSUER — ถ้าไม่มี จะได้ตัวติดตั้งที่ยังไม่เซ็น
 """
@@ -28,8 +28,8 @@ def run(cmd, **kw):
 
 def built_exe(dist):
     if sys.platform == "darwin":
-        return dist / "Inspection Station.app" / "Contents" / "MacOS" / "InspectionStation"
-    return dist / "InspectionStation" / ("InspectionStation.exe" if sys.platform == "win32" else "InspectionStation")
+        return dist / "TKK Workshop.app" / "Contents" / "MacOS" / "TKKWorkshop"
+    return dist / "TKKWorkshop" / ("TKKWorkshop.exe" if sys.platform == "win32" else "TKKWorkshop")
 
 
 def selftest(exe, work):
@@ -49,7 +49,7 @@ def package_windows(dist):
     if not iscc:
         raise SystemExit("ไม่พบ Inno Setup (iscc) — ติดตั้ง: choco install innosetup  หรือ https://jrsoftware.org/isinfo.php")
     run([iscc, f"/DAppVersion={VERSION}", "installer/windows.iss"])
-    return dist / f"InspectionStation-{VERSION}-win-x64-setup.exe"
+    return dist / f"TKKWorkshop-{VERSION}-win-x64-setup.exe"
 
 
 def notarize(path):
@@ -65,16 +65,16 @@ def notarize(path):
 def package_macos(dist, work):
     """ตัวติดตั้ง macOS แบบมาตรฐาน (.pkg): ต้อนรับ → ปลายทาง → ติดตั้ง → สรุป · สคริปต์หลังติดตั้งล้างธง quarantine ของแอป"""
     arch = platform.machine().replace("x86_64", "x64")
-    out = dist / f"InspectionStation-{VERSION}-macos-{arch}.pkg"
+    out = dist / f"TKKWorkshop-{VERSION}-macos-{arch}.pkg"
     out.unlink(missing_ok=True)
     stage = work / "pkg"
     shutil.rmtree(stage, ignore_errors=True)
     (stage / "root").mkdir(parents=True)
-    run(["ditto", dist / "Inspection Station.app", stage / "root" / "Inspection Station.app"])   # ditto: คงลายเซ็นและ symlink
+    run(["ditto", dist / "TKK Workshop.app", stage / "root" / "TKK Workshop.app"])   # ditto: คงลายเซ็นและ symlink
     plist = stage / "component.plist"
     run(["pkgbuild", "--analyze", "--root", stage / "root", plist])
     run(["plutil", "-replace", "0.BundleIsRelocatable", "-bool", "NO", plist])                  # ติดตั้งที่ /Applications เสมอ
-    run(["pkgbuild", "--root", stage / "root", "--component-plist", plist, "--identifier", "dev.tkk.inspection-station",
+    run(["pkgbuild", "--root", stage / "root", "--component-plist", plist, "--identifier", "dev.tkk.workshop",
          "--version", VERSION, "--install-location", "/Applications", "--scripts", "installer/macos/scripts", stage / "app.pkg"])
     shutil.copytree(ROOT / "installer" / "macos" / "resources", stage / "resources")
     shutil.copy(ROOT / "installer" / "assets" / "pkg_logo.png", stage / "resources" / "logo.png")
@@ -101,9 +101,9 @@ def main():
 
     if not (ROOT / "data" / "hand_landmarker.task").exists():
         raise SystemExit("ไม่พบ data/hand_landmarker.task — รัน: git submodule update --init")
-    shutil.rmtree(dist / "InspectionStation", ignore_errors=True)
-    shutil.rmtree(dist / "Inspection Station.app", ignore_errors=True)
-    run([sys.executable, "-m", "PyInstaller", "installer/inspection_station.spec", "--noconfirm",
+    shutil.rmtree(dist / "TKKWorkshop", ignore_errors=True)
+    shutil.rmtree(dist / "TKK Workshop.app", ignore_errors=True)
+    run([sys.executable, "-m", "PyInstaller", "installer/tkk_workshop.spec", "--noconfirm",
          "--distpath", dist, "--workpath", work])
 
     if not args.skip_selftest:
@@ -116,7 +116,7 @@ def main():
     elif sys.platform == "darwin":
         result = package_macos(dist, work)
     else:
-        print(f"\nLinux: ไม่มีตัวติดตั้ง — แพ็กเสร็จที่ {dist}/InspectionStation")
+        print(f"\nLinux: ไม่มีตัวติดตั้ง — แพ็กเสร็จที่ {dist}/TKKWorkshop")
         return
     print(f"\nเสร็จ: {result}  ({result.stat().st_size / 1e6:.0f} MB)")
 

@@ -201,6 +201,6 @@ def splash(msg, width=1280):
     cv2.ellipse(img, (cx, cy), (r, r), 0, 0, 360, (40, 34, 30), max(2, h // 300), cv2.LINE_AA)
     cv2.ellipse(img, (cx, cy), (r, r), 0, a % 360, a % 360 + 90, OK, max(2, h // 240), cv2.LINE_AA)
     T = []
-    _put(T, cx, cy + r + h // 12, "INSPECTION STATION", font(h / 30, True), FG, "ma")
+    _put(T, cx, cy + r + h // 12, "TKK WORKSHOP", font(h / 30, True), FG, "ma")
     _put(T, cx, cy + r + h // 12 + h // 18, msg, font(h / 42), MUTED, "ma")
     return _flush(img, T)

@@ -580,11 +580,11 @@ def test_user_dir_per_platform():
     """ที่เก็บไฟล์ผู้ใช้ตามระบบ — ตรงกับที่เขียนไว้ใน docs/05 และข้อความในตัวติดตั้ง"""
     import userdir
     with patch("userdir.sys.platform", "win32"), patch.dict("os.environ", {"APPDATA": "C:/Users/u/AppData/Roaming"}):
-        assert userdir.user_dir() == Path("C:/Users/u/AppData/Roaming/InspectionStation")
+        assert userdir.user_dir() == Path("C:/Users/u/AppData/Roaming/TKKWorkshop")
     with patch("userdir.sys.platform", "darwin"), patch("userdir.Path.home", return_value=Path("/Users/u")):
-        assert userdir.user_dir() == Path("/Users/u/Library/Application Support/InspectionStation")
+        assert userdir.user_dir() == Path("/Users/u/Library/Application Support/TKKWorkshop")
     with patch("userdir.sys.platform", "linux"), patch.dict("os.environ", {"XDG_CONFIG_HOME": "/x"}):
-        assert userdir.user_dir() == Path("/x/InspectionStation")
+        assert userdir.user_dir() == Path("/x/TKKWorkshop")
 
 
 def test_pick_device_skips_a_gpu_that_does_not_work():

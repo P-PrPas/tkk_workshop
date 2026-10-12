@@ -3,7 +3,7 @@
      The Installer app shows the Welcome / Destination / Install / Summary pages in the system language
      (resources/en.lproj, resources/th.lproj; English when the language is neither). -->
 <installer-gui-script minSpecVersion="2">
-    <title>Inspection Station</title>
+    <title>TKK Workshop</title>
     <welcome file="welcome.html" mime-type="text/html"/>
     <conclusion file="conclusion.html" mime-type="text/html"/>
     <background file="logo.png" alignment="bottomleft" scaling="none"/>
@@ -18,8 +18,8 @@
     <choices-outline>
         <line choice="default"/>
     </choices-outline>
-    <choice id="default" title="Inspection Station" description="Inspection Station">
-        <pkg-ref id="dev.tkk.inspection-station"/>
+    <choice id="default" title="TKK Workshop" description="TKK Workshop">
+        <pkg-ref id="dev.tkk.workshop"/>
     </choice>
-    <pkg-ref id="dev.tkk.inspection-station" version="@VERSION@" onConclusion="none">app.pkg</pkg-ref>
+    <pkg-ref id="dev.tkk.workshop" version="@VERSION@" onConclusion="none">app.pkg</pkg-ref>
 </installer-gui-script>

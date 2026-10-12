@@ -732,7 +732,7 @@ def start(cfg):
                 f"\nเปิดกล้องไม่ได้ (camera_index = {idx})\n"
                 "เช็กว่ากล้องเสียบอยู่ ไม่มีโปรแกรมอื่นแย่งใช้ แล้วลองเปลี่ยน "
                 "camera_index ใน config.yaml เป็น 1 หรือ 2\n"
-                "macOS: ตั้งค่าระบบ → ความเป็นส่วนตัวและความปลอดภัย → กล้อง → เปิดให้ Inspection Station\n"
+                "macOS: ตั้งค่าระบบ → ความเป็นส่วนตัวและความปลอดภัย → กล้อง → เปิดให้ TKK Workshop\n"
                 "Windows: การตั้งค่า → ความเป็นส่วนตัว → กล้อง → อนุญาตแอปเดสก์ท็อป\n"
             )
     return Analyzer(cam, model, hands, cfg), cam

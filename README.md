@@ -15,7 +15,7 @@
 </p>
 
 <p align="center">
-  <img src="docs/app-ui.png" alt="Inspection Station: live view with tracked cups, hand skeletons, the slot-meter checklist and the event log" width="880">
+  <img src="docs/app-ui.png" alt="TKK Workshop: live view with tracked cups, hand skeletons, the slot-meter checklist and the event log" width="880">
 </p>
 
 <p align="center"><sub>Rendered by <code>tools/ui_preview.py</code> with a synthetic scene —

@@ -5,7 +5,7 @@
 
 | | Windows | macOS |
 |---|---|---|
-| ไฟล์ | `InspectionStation-<รุ่น>-win-x64-setup.exe` | `InspectionStation-<รุ่น>-macos-arm64.pkg` |
+| ไฟล์ | `TKKWorkshop-<รุ่น>-win-x64-setup.exe` | `TKKWorkshop-<รุ่น>-macos-arm64.pkg` |
 | รูปแบบ | วิซาร์ดมาตรฐาน (Inno Setup) | วิซาร์ดมาตรฐานของ macOS (`.pkg`) |
 | ภาษา | **เลือกได้** อังกฤษ / ไทย ที่หน้าแรก | ตามภาษาของระบบ (อังกฤษ / ไทย) — macOS ไม่มีตัวเลือกภาษาในตัวติดตั้ง |
 | ชิป | x64 | **Apple Silicon (M1–M4) เท่านั้น** (ไม่มี Mac Intel) |
@@ -15,11 +15,15 @@
 เครื่องพัฒนาเป็น Linux สร้างตัวติดตั้ง Windows/macOS เองไม่ได้ จึงสร้างบน **GitHub Actions**
 (`.github/workflows/build-installers.yml`) ที่ใช้เครื่อง Windows/macOS จริง
 
+> **เปลี่ยนชื่อจาก "Inspection Station" เป็น "TKK Workshop"** (ชื่อแอป ไอคอน ชื่อไฟล์ และตัวระบุภายในเปลี่ยนหมด) รุ่นที่ติดตั้งไว้ก่อนหน้านี้ไม่ถูกแทนที่ — ถอนของเก่าเอง:
+> Windows: Settings → Apps → "Inspection Station" → Uninstall · macOS: ลาก `/Applications/Inspection Station.app` ลงถังขยะ
+> โฟลเดอร์ผู้ใช้เปลี่ยนชื่อด้วย (`InspectionStation` → `TKKWorkshop`) ถ้ามี `config.yaml` ที่แก้ไว้ ให้ย้ายไปโฟลเดอร์ใหม่ · macOS จะถามสิทธิ์กล้องใหม่เพราะเป็นแอปใหม่ในสายตาระบบ
+
 ## ติดตั้ง (สำหรับผู้ใช้)
 
 **Windows** — ดับเบิลคลิก `.exe` → เลือกภาษา (English / ไทย) → Next → Install → Finish
 - ถ้าขึ้นหน้าต่างสีน้ำเงิน "Windows protected your PC" (SmartScreen เพราะยังไม่ได้เซ็นรับรอง): กด **More info** → **Run anyway**
-- ติดตั้งแบบรายผู้ใช้ ไม่ต้องใช้สิทธิ์ admin ลงที่ `%LOCALAPPDATA%\Programs\Inspection Station` · ติดตั้งรุ่นใหม่ทับรุ่นเดิมได้เลย · ถอนการติดตั้งที่ Settings → Apps
+- ติดตั้งแบบรายผู้ใช้ ไม่ต้องใช้สิทธิ์ admin ลงที่ `%LOCALAPPDATA%\Programs\TKK Workshop` · ติดตั้งรุ่นใหม่ทับรุ่นเดิมได้เลย · ถอนการติดตั้งที่ Settings → Apps
 - ครั้งแรกที่เปิดแอป กด Allow เมื่อ Windows ถามสิทธิ์กล้อง
 
 **macOS** — ดับเบิลคลิก `.pkg` → Continue → Install (ใส่รหัสผ่านเครื่อง) → Close แล้วเปิดจาก Launchpad
@@ -29,8 +33,8 @@
 ### macOS บอกว่า "Apple could not verify … is free of malware" มีแต่ปุ่ม Done / Move to Trash
 เป็นหน้าต่างมาตรฐานของ macOS สำหรับไฟล์ที่ยังไม่ผ่านการรับรอง (notarization) ของ Apple **ไม่ใช่ไวรัส** วิธีผ่าน เลือกอย่างใดอย่างหนึ่ง:
 1. กด Done แล้วไป **ตั้งค่าระบบ → ความเป็นส่วนตัวและความปลอดภัย** เลื่อนลงล่าง กด **Open Anyway** ตรงรายการที่ขึ้นชื่อไฟล์ แล้วใส่รหัสผ่าน
-2. หรือใช้ Terminal (ไม่ผ่านด่านนี้เลย): `sudo installer -pkg ~/Downloads/InspectionStation-1.0.0-macos-arm64.pkg -target /`
-3. หรือล้างธงก่อนเปิด: `xattr -d com.apple.quarantine ~/Downloads/InspectionStation-1.0.0-macos-arm64.pkg`
+2. หรือใช้ Terminal (ไม่ผ่านด่านนี้เลย): `sudo installer -pkg ~/Downloads/TKKWorkshop-1.0.0-macos-arm64.pkg -target /`
+3. หรือล้างธงก่อนเปิด: `xattr -d com.apple.quarantine ~/Downloads/TKKWorkshop-1.0.0-macos-arm64.pkg`
 
 **ที่ทำให้หายขาดมีทางเดียว:** เซ็นรับรองและ notarize ด้วยบัญชี Apple Developer Program (ราว $99/ปี) ตัวสร้างรองรับแล้ว ดูหัวข้อ "เซ็นรับรองและ notarize" ด้านล่าง
 
@@ -38,7 +42,7 @@
 
 | | Windows | macOS |
 |---|---|---|
-| โฟลเดอร์ | `%APPDATA%\InspectionStation` | `~/Library/Application Support/InspectionStation` |
+| โฟลเดอร์ | `%APPDATA%\TKKWorkshop` | `~/Library/Application Support/TKKWorkshop` |
 | `app.log` | บันทึกการทำงานครั้งล่าสุด — **ส่งไฟล์นี้มาเวลาเปิดแอปไม่ขึ้น** | เหมือนกัน |
 | `config.yaml` | ใส่เฉพาะค่าที่อยากเปลี่ยน เช่น `model_name: cup_v1` ทับค่าที่มากับแอป | เหมือนกัน |
 | `models/` | วางโมเดลสำรองเอง แอปมองที่นี่ก่อนของที่มากับแอป | เหมือนกัน |
@@ -77,7 +81,7 @@ Windows ต้องมี [Inno Setup 6](https://jrsoftware.org/isinfo.php) (`c
 | ไฟล์ | หน้าที่ |
 |---|---|
 | `build.py` | ตัวควบคุม: แพ็ก → selftest → ห่อเป็นตัวติดตั้ง (+ เซ็น/notarize บน macOS ถ้าตั้งค่าไว้) |
-| `inspection_station.spec` | PyInstaller: อะไรเข้าตัวแอป · `.app` + `NSCameraUsageDescription` บน macOS |
+| `tkk_workshop.spec` | PyInstaller: อะไรเข้าตัวแอป · `.app` + `NSCameraUsageDescription` บน macOS |
 | `windows.iss` | ตัวติดตั้ง Windows (Inno Setup) — ภาษาอังกฤษ + ไทย (`compiler:Languages\Thai.isl` มากับ Inno Setup 6.5+) |
 | `macos/` | ตัวติดตั้ง macOS: `distribution.xml`, หน้าต้อนรับ/สรุป `resources/{en,th}.lproj/*.html`, `scripts/postinstall` |
 | `entitlements.plist` | สิทธิ์ของ hardened runtime (ใช้เมื่อเซ็นด้วย Developer ID) |
