@@ -553,7 +553,84 @@ def test_camera_switch_never_serves_the_old_camera():
         cam.release()
 
 
+# ─────────── ตัวติดตั้ง: พาธของแอปที่แพ็กแล้ว ───────────
+def test_installed_app_user_config_and_files():
+    """แอปที่ติดตั้งแล้วแก้ค่าที่มากับแอปไม่ได้ — config / โมเดลสำรองของผู้ใช้อยู่ที่ user_dir() และทับของที่มากับแอป"""
+    with tempfile.TemporaryDirectory() as d, patch("vision.user_dir", return_value=Path(d)):
+        with patch("vision.FROZEN", True):
+            base = vision.load_config()
+            (Path(d) / "config.yaml").write_text("model_name: cup_v1\nconf: 0.3\n", encoding="utf-8")
+            cfg = vision.load_config()
+            assert cfg["model_name"] == "cup_v1" and cfg["conf"] == 0.3
+            assert cfg["pick_seconds"] == base["pick_seconds"]            # ค่าที่ไม่ได้ใส่คงเดิม
+            (Path(d) / "config.yaml").write_text("", encoding="utf-8")    # ไฟล์ว่างไม่พัง
+            assert vision.load_config() == base
+            (Path(d) / "models").mkdir()
+            (Path(d) / "models" / "x.pt").write_bytes(b"1")
+            assert vision.find_file("models/x.pt") == Path(d) / "models" / "x.pt"          # ของผู้ใช้มาก่อน
+            assert vision.find_file("hand_landmarker.task") == vision.HERE / "hand_landmarker.task"   # ไม่มีของผู้ใช้ → ของแอป
+        with patch("vision.FROZEN", False):                                                  # รันจากซอร์ส: ไม่ยุ่งกับ user_dir
+            (Path(d) / "config.yaml").write_text("conf: 0.99\n", encoding="utf-8")
+            assert vision.load_config()["conf"] != 0.99
+            assert vision.find_file("models/x.pt") == vision.HERE / "models" / "x.pt"
+
+
+
+def test_user_dir_per_platform():
+    """ที่เก็บไฟล์ผู้ใช้ตามระบบ — ตรงกับที่เขียนไว้ใน docs/05 และข้อความในตัวติดตั้ง"""
+    import userdir
+    with patch("userdir.sys.platform", "win32"), patch.dict("os.environ", {"APPDATA": "C:/Users/u/AppData/Roaming"}):
+        assert userdir.user_dir() == Path("C:/Users/u/AppData/Roaming/TKKWorkshop")
+    with patch("userdir.sys.platform", "darwin"), patch("userdir.Path.home", return_value=Path("/Users/u")):
+        assert userdir.user_dir() == Path("/Users/u/Library/Application Support/TKKWorkshop")
+    with patch("userdir.sys.platform", "linux"), patch.dict("os.environ", {"XDG_CONFIG_HOME": "/x"}):
+        assert userdir.user_dir() == Path("/x/TKKWorkshop")
+
+
+def test_pick_device_skips_a_gpu_that_does_not_work():
+    """torch เห็น GPU แต่ใช้ไม่ได้จริง (รุ่นเก่าที่ไม่มี kernel · เครื่องเสมือนที่ไม่มี GPU) → ตกไปตัวถัดไป ไม่ error ทุกเฟรม"""
+    cfg = {"model_path": "models/x.pt", "device": ""}
+    with patch("vision.torch.cuda.is_available", return_value=True), \
+            patch("vision.torch.backends.mps.is_available", return_value=True):
+        with patch("vision.device_works", side_effect=lambda n: n == "mps"):
+            assert vision.pick_device(cfg) == "mps"                       # CUDA ใช้ไม่ได้ → MPS
+        with patch("vision.device_works", return_value=False):
+            assert vision.pick_device(cfg) == "cpu"
+        with patch("vision.device_works", return_value=True):
+            assert vision.pick_device(cfg) == "cuda"
+        assert vision.pick_device({**cfg, "device": "cuda"}) == "cuda"   # ระบุเองใน config ใช้ตามนั้น ไม่ลองให้
+    vision.device_works.cache_clear()
+    assert vision.device_works("cpu") is True
+    with patch("builtins.print"):
+        assert vision.device_works("no-such-device") is False
+
+
+def test_legacy_user_dir_is_migrated_once():
+    """config / โมเดลของผู้ใช้ในโฟลเดอร์ชื่อเดิม (Inspection Station) ถูกคัดลอกมาโฟลเดอร์ใหม่ครั้งเดียว โดยไม่เอา log ไป"""
+    import userdir
+    with tempfile.TemporaryDirectory() as d:
+        new, old = Path(d) / "TKKWorkshop", Path(d) / "InspectionStation"
+        with patch("userdir.user_dir", return_value=new):
+            userdir.migrate_legacy_user_dir()                                   # ไม่มีของเดิม ไม่ทำอะไร
+            assert not new.exists()
+            (old / "models").mkdir(parents=True)
+            (old / "config.yaml").write_text("conf: 0.3\n", encoding="utf-8")
+            (old / "models" / "x.pt").write_bytes(b"1")
+            (old / "app.log").write_text("old log", encoding="utf-8")
+            userdir.migrate_legacy_user_dir()
+            assert (new / "config.yaml").read_text(encoding="utf-8") == "conf: 0.3\n"
+            assert (new / "models" / "x.pt").exists() and not (new / "app.log").exists()
+            (new / "config.yaml").write_text("conf: 0.5\n", encoding="utf-8")   # มีโฟลเดอร์ใหม่แล้ว ไม่ทับ
+            userdir.migrate_legacy_user_dir()
+            assert (new / "config.yaml").read_text(encoding="utf-8") == "conf: 0.5\n"
+            assert (old / "config.yaml").exists()                               # ของเดิมไม่ถูกลบ
+
+
 if __name__ == "__main__":
+    test_legacy_user_dir_is_migrated_once()
+    test_pick_device_skips_a_gpu_that_does_not_work()
+    test_user_dir_per_platform()
+    test_installed_app_user_config_and_files()
     test_camera_switch_never_serves_the_old_camera()
     test_resolve_model_path()
     test_zone_geometry()

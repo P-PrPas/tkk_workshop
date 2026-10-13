@@ -1,0 +1,5 @@
+# ตัวติดตั้ง: ลงต่อจาก app/requirements.txt  ·  pip install -r app/requirements.txt -r installer/requirements-build.txt
+pyinstaller==6.22.*
+# Windows ไม่มี GPU ที่ torch ใช้ได้ในตัวติดตั้ง (torch จาก PyPI เป็นรุ่น CPU) — ใช้ ONNX บน CPU เร็วกว่า .pt มาก
+onnx==1.23.*; sys_platform == "win32"
+onnxruntime==1.23.*; sys_platform == "win32"

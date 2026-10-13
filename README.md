@@ -15,7 +15,7 @@
 </p>
 
 <p align="center">
-  <img src="docs/app-ui.png" alt="Inspection Station: live view with tracked cups, hand skeletons, the slot-meter checklist and the event log" width="880">
+  <img src="docs/app-ui.png" alt="TKK Workshop: live view with tracked cups, hand skeletons, the slot-meter checklist and the event log" width="880">
 </p>
 
 <p align="center"><sub>Rendered by <code>tools/ui_preview.py</code> with a synthetic scene —
@@ -35,6 +35,7 @@ no camera required. Re-shoot from the live app on the demo laptop before the eve
 - [Quick start](#quick-start)
   - [A · Run the notebook (the class)](#a--run-the-notebook-the-class)
   - [B · Run the desktop app (the instructor)](#b--run-the-desktop-app-the-instructor)
+  - [C · Install the packaged app (Windows / macOS)](#c--install-the-packaged-app-windows--macos)
 - [Desktop app reference](#desktop-app-reference)
   - [Controls](#controls)
   - [`config.yaml`](#configyaml)
@@ -124,8 +125,9 @@ tkk_workshop/
 │   ├── config.yaml           # every value you might tune in the room
 │   ├── requirements.txt      # pinned to match the notebook
 │   └── test_vision.py        # logic self-check, no camera needed
+├── installer/                # packaging: PyInstaller spec, Windows (Inno Setup) and macOS (.pkg) installers
 ├── tools/                    # build the big dataset, train the good model, profile, debug
-├── docs/                     # design notes (00–04, Thai) — read 00 first
+├── docs/                     # design notes (00–05, Thai) — read 00 first
 └── data/                     # git submodule → in-room images + labels + model mirror
 ```
 
@@ -232,6 +234,13 @@ The console prints the device it chose: `YOLO device: CUDA / MPS / CPU`.
 python app/test_vision.py
 ```
 
+### C · Install the packaged app (Windows / macOS)
+
+For people who just want to use it: download the installer (`.exe` for Windows, `.pkg` for Apple Silicon Macs) from the
+[Releases](https://github.com/P-PrPas/tkk_workshop/releases) page and open it. Python, the models and everything else
+are inside, and no internet is needed. Both are standard installer wizards (English / Thai on Windows; the Mac one follows the system language). They are **not code-signed yet**, so the first open needs one extra
+click; the steps, and how the installers are built, are in [`docs/05-installer.md`](docs/05-installer.md).
+
 ---
 
 ## Desktop app reference
@@ -332,7 +341,7 @@ Known limits of zone mode — release the cup and move your hand away after putt
 | Symptom | Fix |
 | --- | --- |
 | `module 'torch' has no attribute 'save'` | You’re on Python 3.14. Make the venv with **3.12**. |
-| macOS aborts with `Check failed: service_ Service is unavailable` (`DrishtiMetalHelper`) | MediaPipe tried the Metal/GPU delegate. Fixed in `load_hand_landmarker()` by pinning `delegate=CPU` — pull latest. |
+| macOS aborts with `Check failed: service_ Service is unavailable` (`DrishtiMetalHelper`) | MediaPipe 1.0.1 aborts on macOS whatever the options (tested on a real Mac and CI). `requirements.txt` pins 0.10.21 on macOS — reinstall with `pip install -r app/requirements.txt` under **Python 3.12** (0.10.21 has no 3.13 wheel). |
 | Exits with “เปิดกล้องไม่ได้” after 10 s | Another app is using the camera, or wrong index — try `camera_index: 1`. |
 | `ModuleNotFoundError: PySide6` | `pip install -r app/requirements.txt` (it is `PySide6-Essentials`, not full `PySide6`). |
 | Qt exits with `libGL.so.1: cannot open` (Linux) | `sudo apt install libgl1 libegl1` — Qt needs them; Windows and macOS do not. |
@@ -374,6 +383,7 @@ Detailed design notes (in Thai) live in [`docs/`](docs/) — start with
 | [`02-data.md`](docs/02-data.md) | Dataset, labels, the class-id gotcha |
 | [`03-models.md`](docs/03-models.md) | Both training configs |
 | [`04-desktop-app.md`](docs/04-desktop-app.md) | App architecture |
+| [`05-installer.md`](docs/05-installer.md) | Windows / macOS installers |
 
 ---
 

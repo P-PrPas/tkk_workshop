@@ -1,0 +1,169 @@
+name: Build installers
+
+# สร้างตัวติดตั้งบนเครื่อง Windows / macOS จริง (เครื่องพัฒนาเป็น Linux สร้างให้ไม่ได้)
+#   รันมือ:   Actions > Build installers > Run workflow  → ไฟล์อยู่ที่ Artifacts ของ run นั้น (ต้องมีไฟล์นี้บน main ก่อนถึงจะสั่งได้)
+#   macOS เซ็น + notarize เองเมื่อมี secrets ครบ (ดู docs/05-installer.md) — ไม่มี = ตัวติดตั้งที่ยังไม่เซ็น
+#   ปล่อยจริง: git tag app-v1.0.0 && git push origin app-v1.0.0  → แนบตัวติดตั้งกับ Release ชื่อตาม tag
+# ต้องมี Release "models-v2" ที่แนบ cup_v2.pt + cup_v2.onnx ไว้ก่อน (ดู docs/05-installer.md)
+on:
+  workflow_dispatch:
+  push:
+    tags: ["app-v*"]
+  pull_request:                          # แก้ตัวติดตั้งแล้วเปิด PR = สร้างให้ดูเลยว่ายังพังไหม (ไม่รันทุก PR: ใช้เครื่อง Windows/macOS นานเป็นสิบนาที)
+    paths: ["installer/**", ".github/workflows/build-installers.yml", "VERSION"]
+
+permissions:
+  contents: write        # แนบไฟล์กับ Release ตอน push tag
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows-latest
+            name: windows
+          - os: macos-14                 # Apple Silicon (arm64) — ไม่มีรุ่น Intel
+            name: macos-arm64
+    runs-on: ${{ matrix.os }}
+    env:
+      APPLE_SIGNING: ${{ secrets.APPLE_CERT_APP_P12_BASE64 != '' && 'yes' || 'no' }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive          # data/hand_landmarker.task
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: |
+            app/requirements.txt
+            installer/requirements-build.txt
+
+      - name: Install dependencies
+        run: pip install -r app/requirements.txt -r installer/requirements-build.txt
+
+      - name: Install Inno Setup
+        if: runner.os == 'Windows'
+        run: choco install innosetup -y --no-progress
+
+      - name: Download model weights
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          mkdir -p app/models
+          gh release download models-v2 -R "${{ github.repository }}" -p "cup_v2.*" -D app/models
+          gh release download v1 -R "${{ github.repository }}" -p best.pt -O app/models/cup_v1.pt
+          gh release download v1 -R "${{ github.repository }}" -p best.onnx -O app/models/cup_v1.onnx
+          ls -la app/models
+
+      - name: Import Apple signing certificates
+        if: runner.os == 'macOS' && env.APPLE_SIGNING == 'yes'
+        shell: bash
+        env:
+          APP_P12: ${{ secrets.APPLE_CERT_APP_P12_BASE64 }}
+          PKG_P12: ${{ secrets.APPLE_CERT_INSTALLER_P12_BASE64 }}
+          P12_PASSWORD: ${{ secrets.APPLE_CERT_PASSWORD }}
+          API_KEY: ${{ secrets.APPLE_API_KEY_P8 }}
+        run: |
+          KC="$RUNNER_TEMP/build.keychain-db"; KP="$(uuidgen)"
+          security create-keychain -p "$KP" "$KC"
+          security set-keychain-settings -lut 21600 "$KC"
+          security unlock-keychain -p "$KP" "$KC"
+          echo "$APP_P12" | base64 --decode > "$RUNNER_TEMP/app.p12"
+          echo "$PKG_P12" | base64 --decode > "$RUNNER_TEMP/pkg.p12"
+          security import "$RUNNER_TEMP/app.p12" -P "$P12_PASSWORD" -A -t cert -f pkcs12 -k "$KC"
+          security import "$RUNNER_TEMP/pkg.p12" -P "$P12_PASSWORD" -A -t cert -f pkcs12 -k "$KC"
+          security set-key-partition-list -S apple-tool:,apple: -k "$KP" "$KC"
+          security list-keychains -d user -s "$KC" login.keychain-db
+          echo "MACOS_CODESIGN_IDENTITY=$(security find-identity -v -p codesigning "$KC" | grep 'Developer ID Application' | head -1 | sed -E 's/.*"(.*)"/\1/')" >> "$GITHUB_ENV"
+          echo "MACOS_INSTALLER_IDENTITY=$(security find-identity -v "$KC" | grep 'Developer ID Installer' | head -1 | sed -E 's/.*"(.*)"/\1/')" >> "$GITHUB_ENV"
+          echo "$API_KEY" > "$RUNNER_TEMP/AuthKey.p8"
+          echo "APPLE_API_KEY_PATH=$RUNNER_TEMP/AuthKey.p8" >> "$GITHUB_ENV"
+          echo "APPLE_API_KEY_ID=${{ secrets.APPLE_API_KEY_ID }}" >> "$GITHUB_ENV"
+          echo "APPLE_API_ISSUER=${{ secrets.APPLE_API_ISSUER }}" >> "$GITHUB_ENV"
+
+      - name: Build (pack, self-test, installer)
+        run: python installer/build.py
+
+      - name: Install the .pkg for real, replace the old name, reinstall, check the app (macOS)
+        if: runner.os == 'macOS'
+        shell: bash
+        run: |
+          PKG=$(ls dist/TKKWorkshop-*.pkg)
+          APP="/Applications/TKK Workshop.app"
+          # the app under its former name must be removed by the installer
+          sudo mkdir -p "/Applications/Inspection Station.app/Contents"
+          sudo touch "/Applications/Inspection Station.app/Contents/legacy.txt"
+          sudo installer -pkg "$PKG" -target /
+          test -d "$APP"
+          test ! -e "/Applications/Inspection Station.app" || { echo "the old app was not removed"; exit 1; }
+          # reinstall over the same version: a stale file inside the bundle must disappear
+          sudo touch "$APP/Contents/stale.txt"
+          sudo installer -pkg "$PKG" -target /
+          test ! -e "$APP/Contents/stale.txt" || { echo "reinstall left a stale file behind"; exit 1; }
+          codesign --verify --deep --strict --verbose=2 "$APP"
+          echo "quarantine attribute after install: [$(xattr -p com.apple.quarantine "$APP" 2>/dev/null || true)] (empty = good)"
+          spctl --assess --type execute --verbose=2 "$APP" || echo "(Gatekeeper rejects an app that is not notarized: expected until signing is set up)"
+          "$APP/Contents/MacOS/TKKWorkshop" --selftest "$RUNNER_TEMP/installed.txt" || true
+          cat "$RUNNER_TEMP/installed.txt"
+          grep -q "SELFTEST OK" "$RUNNER_TEMP/installed.txt"
+
+      - name: Install the .exe silently in Thai, replace the old name, reinstall, check the app (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $setup = Get-ChildItem dist\TKKWorkshop-*-setup.exe | Select-Object -First 1
+          $dir = Join-Path $env:RUNNER_TEMP "TKKWorkshopTest"
+          $setupArgs = @("/VERYSILENT","/SUPPRESSMSGBOXES","/NORESTART","/LANG=thai","/DIR=$dir")
+          # a fake uninstall entry of the former product (Inspection Station): the installer must run it
+          $marker = Join-Path $env:RUNNER_TEMP "legacy_uninstalled.txt"
+          $fake = Join-Path $env:RUNNER_TEMP "fake_unins.cmd"
+          Set-Content -Path $fake -Value "@echo off`r`necho ran> `"$marker`""
+          $key = "HKCU:\Software\Microsoft\Windows\CurrentVersion\Uninstall\{7D3B2C1A-5E4F-4A8B-9C6D-1F2E3A4B5C6D}_is1"
+          New-Item -Path $key -Force | Out-Null
+          Set-ItemProperty -LiteralPath $key -Name UninstallString -Value "`"$fake`""
+          Start-Process -FilePath $setup.FullName -ArgumentList $setupArgs -Wait
+          if (-not (Test-Path "$dir\TKKWorkshop.exe")) { throw "installer did not install the app" }
+          if (-not (Test-Path $marker)) { throw "the installer did not uninstall the former Inspection Station entry" }
+          # reinstall over the same folder: a stale file in the program folder must be removed
+          Set-Content -Path "$dir\_internal\stale.txt" -Value "stale"
+          Start-Process -FilePath $setup.FullName -ArgumentList $setupArgs -Wait
+          if (Test-Path "$dir\_internal\stale.txt") { throw "reinstall left a stale file behind" }
+          if (-not (Test-Path "$dir\TKKWorkshop.exe")) { throw "reinstall removed the app" }
+          if (-not (Test-Path "$dir\unins000.exe")) { throw "uninstaller missing" }
+          $out = Join-Path $env:RUNNER_TEMP "installed.txt"
+          Start-Process -FilePath "$dir\TKKWorkshop.exe" -ArgumentList "--selftest","$out" -Wait
+          Get-Content $out
+          if (-not (Select-String -Path $out -Pattern "SELFTEST OK" -Quiet)) { throw "installed app self-test failed" }
+          Start-Process -FilePath "$dir\unins000.exe" -ArgumentList "/VERYSILENT","/SUPPRESSMSGBOXES" -Wait
+          $gone = $false
+          1..60 | ForEach-Object { if (-not (Test-Path "$dir\TKKWorkshop.exe")) { $gone = $true; return }; Start-Sleep -Seconds 1 }
+          if (-not $gone) { throw "uninstall left the app behind" }
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: installer-${{ matrix.name }}
+          path: |
+            dist/TKKWorkshop-*-setup.exe
+            dist/TKKWorkshop-*.pkg
+          if-no-files-found: error
+
+  release:
+    needs: build
+    if: startsWith(github.ref, 'refs/tags/app-v')
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: out
+          merge-multiple: true
+      - name: Publish release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "$GITHUB_REF_NAME" out/* -R "${{ github.repository }}" \
+            --title "TKK Workshop ${GITHUB_REF_NAME#app-v}" \
+            --notes "Windows (.exe) and macOS Apple Silicon (.pkg) installers. Not code-signed: see docs/05-installer.md for the first-launch steps."

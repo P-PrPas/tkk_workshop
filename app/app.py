@@ -1,4 +1,4 @@
-"""INSPECTION STATION — หน้าจอสถานีตรวจชิ้นงาน (Qt / PySide6)
+"""TKK WORKSHOP — หน้าจอสถานีตรวจชิ้นงาน (Qt / PySide6)
 
 ไฟล์นี้ *แสดงผลอย่างเดียว* ทุก 20ms หยิบ (เลขเฟรม, เฟรม, สถานะ) จาก `vision.Analyzer`
 มาวาด — ไม่มีการตัดสินใจเรื่อง CV อยู่ในนี้เลย ตรรกะทั้งหมดอยู่ที่ `app/vision.py`
@@ -11,8 +11,12 @@
 
 รัน:  python app/app.py        ค่าที่ต้องจูนหน้างานอยู่ใน app/config.yaml ทั้งหมด
 """
+import math
+import multiprocessing
+import os
 import sys
 import time
+from pathlib import Path
 
 import cv2
 
@@ -25,7 +29,7 @@ try:
     from PySide6.QtGui import (QColor, QFont, QFontMetrics, QImage, QPainter,
                                QPalette, QPen, QPixmap, QPolygonF)
     from PySide6.QtWidgets import (QAbstractButton, QApplication, QDialog, QDoubleSpinBox, QLabel, QHBoxLayout,
-                                   QMenu, QScrollArea, QVBoxLayout, QWidget)
+                                   QMenu, QMessageBox, QScrollArea, QSplashScreen, QVBoxLayout, QWidget)
 except ImportError:
     raise SystemExit("\nไม่มี PySide6 — ติดตั้งก่อน:  pip install -r app/requirements.txt\n")
 
@@ -95,6 +99,33 @@ def section(p, x, y, s):
     p.setBrush(QColor(HEAD))
     p.drawRoundedRect(QRectF(x, y + 3, 3, 12), 1.5, 1.5)
     text(p, x + 12, y, s, face(12, QFont.Weight.Bold, track=1.0), HEAD)
+
+
+def cup_mark(p, cx, cy, s, color):
+    """โลโก้แก้วมัคมีไอน้ำ กว้างประมาณ 0.8*s สูงประมาณ 0.95*s — รูปทรงเดียวกับไอคอนตัวติดตั้ง (installer/make_assets.py: cup)"""
+    c = QColor(color)
+    bw = 0.52 * s
+    x0, y0 = cx - 0.405 * s, cy - 0.10 * s
+    x1 = x0 + bw
+    stroke = max(1.5, 0.085 * s)
+    p.setBrush(Qt.BrushStyle.NoBrush)                   # หู: วงแหวน (ครึ่งซ้ายถูกตัวแก้วทับ)
+    p.setPen(QPen(c, stroke))
+    hr = 0.19 * s - stroke / 2
+    p.drawEllipse(QPointF(x1 + 0.10 * s, y0 + 0.25 * s), hr, hr)
+    p.setPen(Qt.PenStyle.NoPen)                         # ตัวแก้ว: ก้นโค้ง ปากตรง + ขอบปาก
+    p.setBrush(c)
+    p.drawRoundedRect(QRectF(x0, y0, bw, bw), 0.15 * s, 0.15 * s)
+    p.drawRect(QRectF(x0, y0, bw, bw / 2))
+    p.drawRoundedRect(QRectF(x0 - 0.035 * s, y0 - 0.05 * s, bw + 0.07 * s, 0.085 * s), 0.035 * s, 0.035 * s)
+    steam = QPen(c, max(1.2, 0.055 * s))                # ไอน้ำ: เส้นคดสองเส้น
+    steam.setCapStyle(Qt.PenCapStyle.RoundCap)
+    steam.setJoinStyle(Qt.PenJoinStyle.RoundJoin)
+    p.setPen(steam)
+    p.setBrush(Qt.BrushStyle.NoBrush)
+    for frac, phase in ((0.28, 0.0), (0.68, math.pi)):
+        px = x0 + bw * frac
+        p.drawPolyline(QPolygonF([QPointF(px + 0.035 * s * math.sin(t * 2 * math.pi + phase), y0 - 0.11 * s - t * 0.27 * s)
+                                  for t in (i / 24 for i in range(25))]))
 
 
 # ─────────────────────────── ปุ่ม ───────────────────────────
@@ -508,7 +539,7 @@ class Station(QWidget):
         self.an, self.cfg = analyzer, cfg
         self.seq, self.full = -1, False
         self.msg = ("", 0.0)
-        self.setWindowTitle("Inspection Station — เช็กลิสต์ผู้ตรวจ")
+        self.setWindowTitle("TKK Workshop — เช็กลิสต์ผู้ตรวจ")
         vw = int(cfg.get("window_width", 1280))
         self.resize(vw + 360, vw * 9 // 16 + 92)
         self.setMinimumSize(980, 620)
@@ -789,7 +820,7 @@ class Station(QWidget):
 
     def shot(self):
         if self.view.raw is not None:
-            fn = f"shot_{int(time.time())}.png"
+            fn = str(shots_dir() / f"shot_{int(time.time())}.png")
             cv2.imwrite(fn, self.view.raw)
             print("เซฟภาพ:", fn)
             self.flash(f"บันทึกภาพ {fn}")
@@ -900,14 +931,9 @@ class Header(QWidget):
         p.setPen(pen(LINE))
         p.drawLine(0, self.height() - 1, self.width(), self.height() - 1)
 
-        p.setPen(Qt.PenStyle.NoPen)                    # เครื่องหมาย: สี่เหลี่ยมตะแคง
-        p.setBrush(QColor(SIGNAL))
-        p.translate(32, 29)
-        p.rotate(45)
-        p.drawRoundedRect(QRectF(-7, -7, 14, 14), 2, 2)
-        p.resetTransform()
+        cup_mark(p, 32, 30, 30, SIGNAL)                # โลโก้: แก้วมัค
 
-        text(p, 52, 11, "INSPECTION STATION",
+        text(p, 52, 11, "TKK WORKSHOP",
              face(15, QFont.Weight.Bold, track=2.6, caps=True), TXT)
         zone = self.st.get("mode") == "zone"
         text(p, 52, 33, "โหมด Zone · ย้ายแก้วจากกรอบ A ไปกรอบ B" if zone else
@@ -972,16 +998,135 @@ class Footer(QWidget):
 
 
 # ─────────────────────────── main ───────────────────────────
-def main():
-    import vision
+FROZEN = getattr(sys, "frozen", False)      # รันจากตัวติดตั้ง ไม่ใช่ python app/app.py
 
-    cfg = vision.load_config()
-    analyzer, cam = vision.start(cfg)
+
+def shots_dir():
+    """รูปที่กด S บันทึก — ตัวติดตั้งไม่มีโฟลเดอร์ทำงานที่เขียนได้ ลงโฟลเดอร์รูปภาพของผู้ใช้"""
+    pics = Path.home() / "Pictures"
+    return pics if FROZEN and pics.is_dir() else Path.cwd()
+
+
+def to_log_file():
+    """แอปที่ติดตั้งไม่มีหน้าต่าง console (และ Windows ไม่มี stdout เลย) — ส่งข้อความทั้งหมดลงไฟล์
+    เก็บแค่ครั้งล่าสุด (app.log) ไว้ให้ส่งมาดูเวลามีปัญหา · คืน path ของไฟล์"""
+    from userdir import migrate_legacy_user_dir, user_dir          # ไม่ import vision ที่นี่ — ต้องตั้งไฟล์ log ก่อนที่ torch/ultralytics จะพิมพ์อะไร
+    migrate_legacy_user_dir()
+    d = user_dir()
+    d.mkdir(parents=True, exist_ok=True)
+    path = d / "app.log"
+    sys.stdout = sys.stderr = open(path, "w", encoding="utf-8", buffering=1)
+    return path
+
+
+def fatal(msg):
+    """ข้อผิดพลาดที่ทำให้เปิดแอปไม่ได้ — แอปที่ติดตั้งไม่มี console ต้องขึ้นหน้าต่างให้ผู้ใช้เห็น"""
+    print(msg)
+    box = QMessageBox(QMessageBox.Icon.Critical, "TKK Workshop", "เปิดแอปไม่สำเร็จ")
+    box.setInformativeText(str(msg).strip())
+    box.exec()
+    sys.exit(1)
+
+
+def boot_splash(app):
+    """หน้าต่างรอตอนโหลดโมเดล/กล้อง (หลายวินาที) — ไม่มีมัน ดับเบิลคลิกไอคอนแล้วไม่มีอะไรขึ้นเลย"""
+    img = splash("loading model and camera...", 720)
+    img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
+    qimg = QImage(img.data, img.shape[1], img.shape[0], img.strides[0], QImage.Format.Format_RGB888)
+    box = QSplashScreen(QPixmap.fromImage(qimg))
+    box.show()
+    app.processEvents()
+    return box
+
+
+def selftest_hands(out):
+    """โหมดลูกของ --selftest: โหลดตัวตรวจมือ MediaPipe แล้วตรวจเฟรมว่างหนึ่งใบ — แยกโปรเซสเพราะ MediaPipe บน macOS
+    สั่ง abort ทั้งโปรเซสเมื่อสร้างตัวตรวจมือไม่ได้ (เคยเกิดบน macOS) ซึ่ง try/except จับไม่ได้"""
+    import vision
+    import mediapipe as mp
+    import numpy as np
+    hands = vision.load_hand_landmarker(vision.load_config())
+    hands.detect_for_video(mp.Image(image_format=mp.ImageFormat.SRGB, data=np.zeros((480, 640, 3), np.uint8)), 1)
+    Path(out).write_text("HANDS OK\n", encoding="utf-8")
+    return 0
+
+
+def selftest_hands_in_child(out):
+    import subprocess
+    marker = Path(str(out) + ".hands")
+    marker.unlink(missing_ok=True)
+    cmd = [sys.executable] + ([] if FROZEN else [str(Path(__file__).resolve())]) + ["--selftest-hands", str(marker)]
+    r = subprocess.run(cmd, timeout=300)
+    if r.returncode == 0 and marker.exists():
+        return "HANDS OK"
+    raise RuntimeError(f"hand tracker self-test failed (exit {r.returncode})")
+
+
+def selftest(out):
+    """`TKKWorkshop --selftest <ไฟล์>` — โหลดโมเดล + MediaPipe + วาดเฟรมหนึ่งใบ + สร้างวิดเจ็ต Qt โดยไม่ต้องมีกล้อง/จอ
+    ตัวสร้างติดตั้ง (CI) ใช้เช็กว่าที่แพ็กมาครบจริง · เขียนผลลงไฟล์เพราะแอปแบบไม่มี console พิมพ์ออกหน้าจอไม่ได้"""
+    import traceback
+    lines = []
+    try:
+        os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
+        import vision                      # ต้องมาก่อน mediapipe: vision ตั้ง MEDIAPIPE_DISABLE_GPU ก่อน import (เหมือนตอนรันจริง)
+        import mediapipe as mp
+        import numpy as np
+
+        app = QApplication(sys.argv)
+        cfg = vision.load_config()
+        cfg["model_path"] = vision.resolve_model_path(cfg)
+        model = vision.load_model(cfg)
+        frame = np.zeros((480, 640, 3), np.uint8)
+        dev = vision.pick_device(cfg)
+        model.predict(frame, imgsz=cfg.get("imgsz", 480), device=dev, verbose=False, **vision.PREDICT_ARGS)
+        insp = vision.Inspection(8, 5, 4.0)
+        shown = vision.draw(frame.copy(), [(1, [100, 100, 300, 400], False)], [], set(), insp, False,
+                            confidences={1: 0.9})
+        view = Viewport()
+        view.resize(640, 360)
+        view.set_frame(shown)
+        lines += [f"SELFTEST OK model={cfg['model_path']} device={dev}",
+                  f"python={sys.version.split()[0]} frozen={FROZEN} resources={vision.HERE}",
+                  selftest_hands_in_child(out)]
+        code = 0
+    except BaseException:
+        lines += ["SELFTEST FAILED", traceback.format_exc()]
+        code = 1
+    Path(out).write_text("\n".join(lines) + "\n", encoding="utf-8")
+    return code
+
+
+def main():
+    multiprocessing.freeze_support()           # PyInstaller + torch/ultralytics อาจเปิดโปรเซสลูก
+    if "--selftest-hands" in sys.argv:
+        i = sys.argv.index("--selftest-hands")
+        raise SystemExit(selftest_hands(sys.argv[i + 1]))
+    if "--selftest" in sys.argv:
+        i = sys.argv.index("--selftest")
+        raise SystemExit(selftest(sys.argv[i + 1] if len(sys.argv) > i + 1 else "selftest.txt"))
+    if FROZEN:
+        to_log_file()
 
     app = QApplication(sys.argv)
-    app.setApplicationName("Inspection Station")
+    app.setApplicationName("TKK Workshop")
+    boot = boot_splash(app)
+    try:
+        import vision
+
+        cfg = vision.load_config()
+        analyzer, cam = vision.start(cfg)
+    except SystemExit as e:                    # vision.start() ออกด้วยข้อความไทยที่บอกว่าต้องแก้อะไร
+        boot.close()
+        fatal(e.code if isinstance(e.code, str) else "ออกจากโปรแกรม")
+    except Exception:
+        import traceback
+        boot.close()
+        fatal(traceback.format_exc())
+
     win = Station(analyzer, cfg)
     win.show()
+    boot.finish(win)
     app.exec()
 
     analyzer.release()

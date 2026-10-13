@@ -22,6 +22,7 @@ tkk_workshop/            ← repo นี้
 ├── docs/                ← 00 ภาพรวม, 01 สเปกโน้ตบุ๊ก, 02 ข้อมูล, 03 โมเดล, 04 แอป
 ├── notebooks/cv101.ipynb
 ├── app/{vision.py,zone.py,overlay.py,app.py,config.yaml}   ← คิด / สถานะโหมด zone / วาดลงเฟรม / แสดงผล
+├── installer/           ← ตัวติดตั้ง Windows (.exe) / macOS (.pkg) — อ่าน docs/05-installer.md
 ├── tools/{build_bigdata.py,ui_preview.py}
 └── data/                ← submodule → github.com/P-PrPas/tkk_workshop-data
 ```
@@ -46,8 +47,8 @@ tkk_workshop/            ← repo นี้
 ## ข้อเท็จจริงที่ตรวจสอบแล้ว อย่าเสียเวลาตรวจซ้ำ
 - Ultralytics **ไม่มี** hand-pose checkpoint สำเร็จรูป มีแต่ body pose 17 จุด
   และ dataset `hand-keypoints.yaml` ไว้ fine-tune เอง → ใช้ MediaPipe
-- `mediapipe==1.0.1` เป็น wheel `py3-none` ติดตั้งได้ทั้ง Python 3.12 และ 3.13
-  ทดสอบ `HandLandmarker` ด้วยการรันจริงแล้วผ่าน
+- `mediapipe==1.0.1` เป็น wheel `py3-none` ติดตั้งได้ทั้ง Python 3.12 และ 3.13 ทดสอบ `HandLandmarker` แล้วผ่านบน Windows/Linux
+  **แต่บน macOS 1.0.1 abort ทั้งโปรเซสตอนสร้างตัวตรวจมือ** (ทุกตัวเลือก — ทดสอบบน CI และ Mac จริง) → macOS ใช้ `0.10.21` (Python 3.12 เท่านั้น)
 - COCO class id ของ `cup` = **41** (ใช้ตอน auto-label และตอน fallback)
 - `model.track()` ต้องมี `lap`/`lapx` — โน้ตบุ๊กลง `lapx` ตั้งแต่เซลล์ 0 ไม่งั้น ultralytics
   ไป `pip install` เองกลางเดโม · แอปมี `lap` ใน requirements แล้ว
@@ -63,6 +64,7 @@ python tools/build_bigdata.py                # ดึง COCO cup มาเต�
 python app/app.py                            # รันแอป (ต้องมีกล้อง)
 python tools/ui_preview.py                   # เรนเดอร์หน้าจอเป็น docs/app-ui.png (ไม่ต้องมีกล้อง)
 python app/test_vision.py                    # self-check ตรรกะ
+python installer/build.py                    # สร้างตัวติดตั้งของระบบที่รันอยู่ (ปกติให้ GitHub Actions สร้าง)
 git clone --recursive <code repo>            # ฝั่งนักพัฒนา ต้องมี --recursive
 ```
 

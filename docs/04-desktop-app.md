@@ -37,7 +37,7 @@ python app/app.py          # ครั้งแรกโหลด hand_landmarke
 ซึ่งตรงกับสามคำถามที่ผู้เรียนถามพอดี · ผลพลอยได้จากการที่ `overlay.py` ไม่พึ่ง torch:
 `tools/ui_preview.py` เปิดหน้าจอทั้งจอออกมาดูได้บนเครื่องที่ยังไม่ได้ลงสแต็ก CV
 
-## UI = PySide6 (Qt) — "Inspection Station"
+## UI = PySide6 (Qt) — "TKK Workshop"
 
 เดิมเป็นหน้าต่าง `cv2` เดียวที่วาด HUD ลงบนเฟรม พอโจทย์กลายเป็น "เช็กลิสต์ผู้ตรวจ"
 มันไม่พอ: เช็กลิสต์เป็น**รายการที่ยาวขึ้น-สั้นลงได้** และต้องมี**ปุ่มเริ่มรอบใหม่**
@@ -53,7 +53,7 @@ HiDPI อัตโนมัติ · `QPainter` antialias เต็มรูป�
 
 ```
 ┌───────────────────────────────────────────┬──────────────────────┐
-│ ◆ INSPECTION STATION                      │            01:57:03  │  หัวแถบ
+│ ◆ TKK WORKSHOP                      │            01:57:03  │  หัวแถบ
 │   เช็กลิสต์ผู้ตรวจ · หยิบชิ้นไหนตรวจแล้วบ้าง  │       รอบนี้ 04:12   │
 ├───────────────────────────────────────────┼──────────────────────┤
 │ ⌐ ● LIVE                              ¬   │  รอบตรวจปัจจุบัน       │
@@ -194,7 +194,7 @@ class HoldState:
 | ไม่เจอมือ / ไม่เจอแก้ว | สถานะปกติ ไม่ใช่ error — วาดเฟรมต่อไปเงียบๆ |
 | โหลดโมเดลไม่สำเร็จ | แอปไม่โหลดโมเดลจากเน็ต — วาง `cup_v2.pt` ไว้ที่ `app/models/` (v1 สำรอง: `gh release download v1 -R P-PrPas/tkk_workshop -p best.pt -O app/models/cup_v1.pt`) · ไม่มีไฟล์ → บอก path ที่ต้องวาง + แผนสำรอง yolo11m |
 | Python นอก 3.11–3.13 | เตือนตอนเปิดแอป + บอกคำสั่งสร้าง venv 3.12 (mediapipe/torch ยังไม่มี wheel 3.14 ที่ครบ) |
-| macOS: MediaPipe เรียก Metal delegate แล้ว abort (`DrishtiMetalHelper` / `service_ Service is unavailable`) | `load_hand_landmarker()` ปัก `delegate=CPU` ไว้ — โมเดลมือรัน CPU ไม่ต้องแตะ GPU |
+| macOS: MediaPipe เรียก Metal delegate แล้ว abort (`DrishtiMetalHelper` / `service_ Service is unavailable`) | mediapipe 1.0.1 abort บน macOS ไม่ว่าตั้งอะไร (ทดสอบบน Mac จริงและ CI) — `requirements.txt` ปัก 0.10.21 บน macOS ให้ · ติดตั้งใหม่ด้วย `pip install -r app/requirements.txt` ใต้ **Python 3.12** (0.10.21 ไม่มี wheel ของ 3.13) |
 
 ### 5. เช็กลิสต์ผู้ตรวจ (`Inspection`) — โจทย์จริงของงาน
 ```python
