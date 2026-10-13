@@ -1,4 +1,4 @@
-"""TKK WORKSHOP — หน้าจอสถานีตรวจชิ้นงาน (Qt / PySide6)
+"""CUPTICK — หน้าจอสถานีตรวจชิ้นงาน (Qt / PySide6)
 
 ไฟล์นี้ *แสดงผลอย่างเดียว* ทุก 20ms หยิบ (เลขเฟรม, เฟรม, สถานะ) จาก `vision.Analyzer`
 มาวาด — ไม่มีการตัดสินใจเรื่อง CV อยู่ในนี้เลย ตรรกะทั้งหมดอยู่ที่ `app/vision.py`
@@ -549,7 +549,7 @@ class Station(QWidget):
         self.an, self.cfg = analyzer, cfg
         self.seq, self.full = -1, False
         self.msg = ("", 0.0)
-        self.setWindowTitle("TKK Workshop — เช็กลิสต์ผู้ตรวจ")
+        self.setWindowTitle("Cuptick — เช็กลิสต์ผู้ตรวจ")
         vw = int(cfg.get("window_width", 1280))
         self.resize(vw + 360, vw * 9 // 16 + 92)
         self.setMinimumSize(980, 620)
@@ -943,7 +943,7 @@ class Header(QWidget):
 
     def _tabs(self):
         """[(โหมด, ป้าย, สี่เหลี่ยม)] — วาดกับรับเมาส์ใช้ชุดเดียวกัน"""
-        f, x, out = face(13, QFont.Weight.DemiBold), 232, []
+        f, x, out = face(13, QFont.Weight.DemiBold), 166, []
         for mode, label in TABS:
             w = QFontMetrics(f).horizontalAdvance(label) + 36
             out.append((mode, label, QRectF(x, 0, w, self.height())))
@@ -977,9 +977,9 @@ class Header(QWidget):
         p.drawLine(0, self.height() - 1, self.width(), self.height() - 1)
 
         cup_mark(p, 32, 28, 28, ACCENT_HI)             # โลโก้: แก้วมัค
-        text(p, 52, 15, "TKK Workshop", face(16, QFont.Weight.Bold), TXT)
+        text(p, 52, 15, "Cuptick", face(16, QFont.Weight.Bold), TXT)
         p.setPen(pen(LINE))
-        p.drawLine(214, 14, 214, 38)
+        p.drawLine(148, 14, 148, 38)
 
         for mode, label, r in self._tabs():
             on = mode == self.mode
@@ -1073,7 +1073,7 @@ def to_log_file():
 def fatal(msg):
     """ข้อผิดพลาดที่ทำให้เปิดแอปไม่ได้ — แอปที่ติดตั้งไม่มี console ต้องขึ้นหน้าต่างให้ผู้ใช้เห็น"""
     print(msg)
-    box = QMessageBox(QMessageBox.Icon.Critical, "TKK Workshop", "เปิดแอปไม่สำเร็จ")
+    box = QMessageBox(QMessageBox.Icon.Critical, "Cuptick", "เปิดแอปไม่สำเร็จ")
     box.setInformativeText(str(msg).strip())
     box.exec()
     sys.exit(1)
@@ -1114,7 +1114,7 @@ def selftest_hands_in_child(out):
 
 
 def selftest(out):
-    """`TKKWorkshop --selftest <ไฟล์>` — โหลดโมเดล + MediaPipe + วาดเฟรมหนึ่งใบ + สร้างวิดเจ็ต Qt โดยไม่ต้องมีกล้อง/จอ
+    """`Cuptick --selftest <ไฟล์>` — โหลดโมเดล + MediaPipe + วาดเฟรมหนึ่งใบ + สร้างวิดเจ็ต Qt โดยไม่ต้องมีกล้อง/จอ
     ตัวสร้างติดตั้ง (CI) ใช้เช็กว่าที่แพ็กมาครบจริง · เขียนผลลงไฟล์เพราะแอปแบบไม่มี console พิมพ์ออกหน้าจอไม่ได้"""
     import traceback
     lines = []
@@ -1160,7 +1160,7 @@ def main():
         to_log_file()
 
     app = QApplication(sys.argv)
-    app.setApplicationName("TKK Workshop")
+    app.setApplicationName("Cuptick")
     boot = boot_splash(app)
     try:
         import vision

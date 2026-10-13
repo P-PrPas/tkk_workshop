@@ -1,19 +1,19 @@
-﻿; Inno Setup 6.5+ - wraps dist\TKKWorkshop (the PyInstaller output) into one installer.
+﻿; Inno Setup 6.5+ - wraps dist\Cuptick (the PyInstaller output) into one installer.
 ;   iscc /DAppVersion=1.0.0 installer\windows.iss      (or: python installer/build.py)
 ; A standard wizard: language choice (English / Thai) -> welcome -> folder -> shortcuts -> install -> finish.
 ; Per-user install (no administrator rights). Running it again reinstalls cleanly: a running copy is closed, the old
-; program files are removed first (nothing stale is left behind), and the earlier 'Inspection Station' install
-; (the product's former name, different AppId) is uninstalled silently.
+; program files are removed first (nothing stale is left behind), and the installs under the former names
+; 'TKK Workshop' and 'Inspection Station' (different AppIds) are uninstalled silently.
 
 #ifndef AppVersion
   #define AppVersion "1.0.0"
 #endif
-#define AppName "TKK Workshop"
-#define AppExe "TKKWorkshop.exe"
+#define AppName "Cuptick"
+#define AppExe "Cuptick.exe"
 #define AppPublisher "Connected Tech"
 
 [Setup]
-AppId={{6E335DF4-E3A6-4923-8A83-FC1BF51C33C4}
+AppId={{E67DD168-0483-44BD-BBD5-C53B5D28B157}
 AppName={#AppName}
 AppVersion={#AppVersion}
 AppVerName={#AppName} {#AppVersion}
@@ -31,7 +31,7 @@ ArchitecturesInstallIn64BitMode=x64compatible
 CloseApplications=yes
 RestartApplications=no
 OutputDir=..\dist
-OutputBaseFilename=TKKWorkshop-{#AppVersion}-win-x64-setup
+OutputBaseFilename=Cuptick-{#AppVersion}-win-x64-setup
 SetupIconFile=assets\icon.ico
 UninstallDisplayIcon={app}\{#AppExe}
 UninstallDisplayName={#AppName}
@@ -55,7 +55,7 @@ Name: "desktopicon"; Description: "{cm:CreateDesktopIcon}"; GroupDescription: "{
 Type: filesandordirs; Name: "{app}\_internal"
 
 [Files]
-Source: "..\dist\TKKWorkshop\*"; DestDir: "{app}"; Flags: recursesubdirs createallsubdirs ignoreversion
+Source: "..\dist\Cuptick\*"; DestDir: "{app}"; Flags: recursesubdirs createallsubdirs ignoreversion
 
 [Icons]
 Name: "{autoprograms}\{#AppName}"; Filename: "{app}\{#AppExe}"
@@ -66,29 +66,37 @@ Filename: "{app}\{#AppExe}"; Description: "{cm:LaunchProgram,{#AppName}}"; Flags
 
 [Code]
 const
-  // AppId of the former product name 'Inspection Station' (registry key = AppId + '_is1')
-  LegacyUninstallKey = 'Software\Microsoft\Windows\CurrentVersion\Uninstall\{7D3B2C1A-5E4F-4A8B-9C6D-1F2E3A4B5C6D}_is1';
+  // AppIds of the former product names (registry key = AppId + '_is1'): 'TKK Workshop' and before it 'Inspection Station'
+  UninstallKeyPrefix = 'Software\Microsoft\Windows\CurrentVersion\Uninstall\';
+  LegacyTkkWorkshop = '{6E335DF4-E3A6-4923-8A83-FC1BF51C33C4}_is1';
+  LegacyInspectionStation = '{7D3B2C1A-5E4F-4A8B-9C6D-1F2E3A4B5C6D}_is1';
 
-function LegacyUninstaller(): String;
+function LegacyUninstaller(Id: String): String;
 begin
-  if not RegQueryStringValue(HKCU, LegacyUninstallKey, 'UninstallString', Result) then
-    if not RegQueryStringValue(HKLM, LegacyUninstallKey, 'UninstallString', Result) then
+  if not RegQueryStringValue(HKCU, UninstallKeyPrefix + Id, 'UninstallString', Result) then
+    if not RegQueryStringValue(HKLM, UninstallKeyPrefix + Id, 'UninstallString', Result) then
       Result := '';
 end;
 
-procedure CurStepChanged(CurStep: TSetupStep);
+// a running old copy would lock its files
+procedure RemoveLegacy(Id, ExeName: String);
 var
   Uninstaller: String;
   Code: Integer;
 begin
+  Uninstaller := LegacyUninstaller(Id);
+  if Uninstaller <> '' then
+  begin
+    Exec(ExpandConstant('{sys}\taskkill.exe'), '/F /IM ' + ExeName, '', SW_HIDE, ewWaitUntilTerminated, Code);
+    Exec(RemoveQuotes(Uninstaller), '/VERYSILENT /SUPPRESSMSGBOXES /NORESTART', '', SW_HIDE, ewWaitUntilTerminated, Code);
+  end;
+end;
+
+procedure CurStepChanged(CurStep: TSetupStep);
+begin
   if CurStep = ssInstall then
   begin
-    Uninstaller := LegacyUninstaller();
-    if Uninstaller <> '' then
-    begin
-      // a running old copy would lock its files
-      Exec(ExpandConstant('{sys}\taskkill.exe'), '/F /IM InspectionStation.exe', '', SW_HIDE, ewWaitUntilTerminated, Code);
-      Exec(RemoveQuotes(Uninstaller), '/VERYSILENT /SUPPRESSMSGBOXES /NORESTART', '', SW_HIDE, ewWaitUntilTerminated, Code);
-    end;
+    RemoveLegacy(LegacyTkkWorkshop, 'TKKWorkshop.exe');
+    RemoveLegacy(LegacyInspectionStation, 'InspectionStation.exe');
   end;
 end;

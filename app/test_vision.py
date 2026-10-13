@@ -2,6 +2,7 @@
 
 รัน:  python app/test_vision.py
 """
+import shutil
 import tempfile
 import time
 import numpy as np
@@ -580,11 +581,11 @@ def test_user_dir_per_platform():
     """ที่เก็บไฟล์ผู้ใช้ตามระบบ — ตรงกับที่เขียนไว้ใน docs/05 และข้อความในตัวติดตั้ง"""
     import userdir
     with patch("userdir.sys.platform", "win32"), patch.dict("os.environ", {"APPDATA": "C:/Users/u/AppData/Roaming"}):
-        assert userdir.user_dir() == Path("C:/Users/u/AppData/Roaming/TKKWorkshop")
+        assert userdir.user_dir() == Path("C:/Users/u/AppData/Roaming/Cuptick")
     with patch("userdir.sys.platform", "darwin"), patch("userdir.Path.home", return_value=Path("/Users/u")):
-        assert userdir.user_dir() == Path("/Users/u/Library/Application Support/TKKWorkshop")
+        assert userdir.user_dir() == Path("/Users/u/Library/Application Support/Cuptick")
     with patch("userdir.sys.platform", "linux"), patch.dict("os.environ", {"XDG_CONFIG_HOME": "/x"}):
-        assert userdir.user_dir() == Path("/x/TKKWorkshop")
+        assert userdir.user_dir() == Path("/x/Cuptick")
 
 
 def test_pick_device_skips_a_gpu_that_does_not_work():
@@ -606,10 +607,10 @@ def test_pick_device_skips_a_gpu_that_does_not_work():
 
 
 def test_legacy_user_dir_is_migrated_once():
-    """config / โมเดลของผู้ใช้ในโฟลเดอร์ชื่อเดิม (Inspection Station) ถูกคัดลอกมาโฟลเดอร์ใหม่ครั้งเดียว โดยไม่เอา log ไป"""
+    """config / โมเดลของผู้ใช้ในโฟลเดอร์ชื่อเดิม (Inspection Station / TKK Workshop) ถูกคัดลอกมาโฟลเดอร์ใหม่ครั้งเดียว โดยไม่เอา log ไป"""
     import userdir
     with tempfile.TemporaryDirectory() as d:
-        new, old = Path(d) / "TKKWorkshop", Path(d) / "InspectionStation"
+        new, old = Path(d) / "Cuptick", Path(d) / "InspectionStation"
         with patch("userdir.user_dir", return_value=new):
             userdir.migrate_legacy_user_dir()                                   # ไม่มีของเดิม ไม่ทำอะไร
             assert not new.exists()
@@ -624,6 +625,13 @@ def test_legacy_user_dir_is_migrated_once():
             userdir.migrate_legacy_user_dir()
             assert (new / "config.yaml").read_text(encoding="utf-8") == "conf: 0.5\n"
             assert (old / "config.yaml").exists()                               # ของเดิมไม่ถูกลบ
+        shutil.rmtree(new)                                                      # มีสองชื่อเดิม: เอา TKKWorkshop (ใหม่กว่า)
+        newer = Path(d) / "TKKWorkshop"
+        newer.mkdir()
+        (newer / "config.yaml").write_text("conf: 0.9\n", encoding="utf-8")
+        with patch("userdir.user_dir", return_value=new):
+            userdir.migrate_legacy_user_dir()
+        assert (new / "config.yaml").read_text(encoding="utf-8") == "conf: 0.9\n"
 
 
 if __name__ == "__main__":

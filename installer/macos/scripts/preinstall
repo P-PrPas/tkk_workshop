@@ -1,10 +1,11 @@
 #!/bin/sh
 # Runs as root before the files are copied. $3 is the volume being installed to ("/" on a normal install).
 # Start from a clean slate so a reinstall (the same version too) replaces the app completely instead of being
-# skipped or leaving stale files, and remove the app under its former name ("Inspection Station").
+# skipped or leaving stale files, and remove the app under its former names ("TKK Workshop", "Inspection Station").
 V="${3%/}"
+pkill -x Cuptick 2>/dev/null
 pkill -x TKKWorkshop 2>/dev/null
 pkill -x InspectionStation 2>/dev/null
 sleep 1
-rm -rf "$V/Applications/TKK Workshop.app" "$V/Applications/Inspection Station.app"
+rm -rf "$V/Applications/Cuptick.app" "$V/Applications/TKK Workshop.app" "$V/Applications/Inspection Station.app"
 exit 0

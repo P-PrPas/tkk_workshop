@@ -1,9 +1,9 @@
 # -*- mode: python ; coding: utf-8 -*-
 """PyInstaller: แพ็กแอป (python + torch + ultralytics + mediapipe + Qt + โมเดล) เป็นโฟลเดอร์/แอปที่รันได้เอง
 
-    pyinstaller installer/tkk_workshop.spec --noconfirm       # หรือ python installer/build.py (ทำครบทั้งชุด)
+    pyinstaller installer/cuptick.spec --noconfirm       # หรือ python installer/build.py (ทำครบทั้งชุด)
 
-ผลลัพธ์: dist/TKKWorkshop/ (Windows/Linux) · dist/TKK Workshop.app (macOS)
+ผลลัพธ์: dist/Cuptick/ (Windows/Linux) · dist/Cuptick.app (macOS)
 ตัวติดตั้ง (Inno Setup / .dmg) ห่อผลลัพธ์นี้อีกชั้น — ดู installer/build.py
 """
 import os
@@ -52,29 +52,29 @@ pyz = PYZ(a.pure)
 exe = EXE(
     pyz, a.scripts, [],
     exclude_binaries=True,
-    name="TKKWorkshop",
+    name="Cuptick",
     console=False,                                         # ไม่มีหน้าต่างดำ — ข้อความไปที่ app.log (ดู app.py: to_log_file)
     icon=str(ASSETS / ("icon.ico" if sys.platform == "win32" else "icon.icns")),
     codesign_identity=SIGN_ID,
     entitlements_file=ENTITLEMENTS,
 )
-coll = COLLECT(exe, a.binaries, a.datas, name="TKKWorkshop")
+coll = COLLECT(exe, a.binaries, a.datas, name="Cuptick")
 
 if sys.platform == "darwin":
     app = BUNDLE(
         coll,
-        name="TKK Workshop.app",
+        name="Cuptick.app",
         icon=str(ASSETS / "icon.icns"),
-        bundle_identifier="dev.tkk.workshop",
+        bundle_identifier="dev.tkk.cuptick",
         version=VERSION,
         codesign_identity=SIGN_ID,
         entitlements_file=ENTITLEMENTS,
         info_plist={
-            "CFBundleDisplayName": "TKK Workshop",
+            "CFBundleDisplayName": "Cuptick",
             "CFBundleShortVersionString": VERSION,
             "NSHighResolutionCapable": True,
             "LSMinimumSystemVersion": "12.0",
             # ไม่มีข้อความนี้ macOS จะปิดแอปทันทีที่เปิดกล้อง และไม่ขึ้นหน้าต่างขอสิทธิ์
-            "NSCameraUsageDescription": "TKK Workshop ใช้กล้องเพื่อตรวจจับแก้วและมือแบบเรียลไทม์",
+            "NSCameraUsageDescription": "Cuptick ใช้กล้องเพื่อตรวจจับแก้วและมือแบบเรียลไทม์",
         },
     )
