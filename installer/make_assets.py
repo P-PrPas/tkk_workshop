@@ -16,7 +16,7 @@ GREEN = (61, 214, 140)
 S = 4                                                    # วาดใหญ่ S เท่าแล้วย่อ — ขอบเนียน
 
 BOLD = "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf"
-PRODUCT = "TKK Workshop"
+PRODUCT = "Cuptick"
 
 
 def font(path, px):

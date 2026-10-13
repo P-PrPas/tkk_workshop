@@ -5,8 +5,8 @@ import shutil
 import sys
 from pathlib import Path
 
-APP_DIR_NAME = "TKKWorkshop"
-LEGACY_DIR_NAME = "InspectionStation"        # ชื่อเดิมของแอป (Inspection Station)
+APP_DIR_NAME = "Cuptick"
+LEGACY_DIR_NAMES = ("TKKWorkshop", "InspectionStation")   # ชื่อเดิมของแอป (TKK Workshop · ก่อนหน้านั้น Inspection Station) — ใหม่สุดก่อน
 
 
 def user_dir():
@@ -21,9 +21,9 @@ def user_dir():
 
 
 def migrate_legacy_user_dir():
-    """รุ่นที่ยังชื่อ Inspection Station เก็บ config / โมเดลที่ผู้ใช้วางเองไว้ในโฟลเดอร์ชื่อเดิม — คัดลอกมาให้ครั้งเดียวตอนเปิดแอป
-    (เฉพาะเมื่อโฟลเดอร์ใหม่ยังไม่มี · ไม่แตะของเดิม · ไม่เอา log ไป)"""
+    """รุ่นที่ยังใช้ชื่อเดิมเก็บ config / โมเดลที่ผู้ใช้วางเองไว้ในโฟลเดอร์ชื่อเดิม — คัดลอกมาให้ครั้งเดียวตอนเปิดแอป
+    (เฉพาะเมื่อโฟลเดอร์ใหม่ยังไม่มี · เอาโฟลเดอร์เดิมที่ใหม่สุดอันเดียว · ไม่แตะของเดิม · ไม่เอา log ไป)"""
     new = user_dir()
-    old = new.with_name(LEGACY_DIR_NAME)
-    if not new.exists() and old.is_dir():
+    old = next((d for d in (new.with_name(n) for n in LEGACY_DIR_NAMES) if d.is_dir()), None)
+    if not new.exists() and old:
         shutil.copytree(old, new, ignore=shutil.ignore_patterns("app.log", "runs"))

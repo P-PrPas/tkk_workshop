@@ -1,11 +1,12 @@
-"""วาดผลลงบนเฟรม — สี ฟอนต์ กรอบแก้ว โครงมือ เส้นทาง และจอรอ
+"""วาดผลลงบนเฟรม — สี ฟอนต์ กรอบแก้ว โครงมือ เส้นทาง
 
 แยกออกมาจาก `vision.py` เพราะไฟล์นี้ **ไม่พึ่ง torch / ultralytics / mediapipe เลย**
 เปิดแอปดูหน้าตาบนเครื่องที่ไม่มีสแต็ก CV ก็ยังได้ (tools/ui_preview.py ใช้ทางนี้)
 
 เส้นแบ่ง: อะไรที่ต้องอยู่ *ตรงตำแหน่งบนภาพ* วาดที่นี่ · อะไรที่เป็นข้อความ/รายการ/ปุ่ม
-เป็นวิดเจ็ต Qt ใน app.py (และพิมพ์ไทยได้ ต่างจากบนเฟรมที่ DejaVu ไม่มี glyph ไทย)
+เป็นวิดเจ็ต Qt ใน app.py (และพิมพ์ไทยได้ ต่างจากบนเฟรมที่ Inter ไม่มี glyph ไทย)
 """
+import sys
 import time
 from pathlib import Path
 
@@ -13,7 +14,7 @@ import cv2
 import numpy as np
 from PIL import Image, ImageDraw, ImageFont
 
-# ทุกข้อความบนจอเป็นภาษาอังกฤษ — DejaVu ไม่มี glyph ไทย (ไทยไปที่วิดเจ็ต Qt)
+# ทุกข้อความบนจอเป็นภาษาอังกฤษ — Inter ไม่มี glyph ไทย (ไทยไปที่วิดเจ็ต Qt)
 # สีชุดเดียวกับ UI ใน app.py — ภาพกับแผงข้างต้องดูเป็นเครื่องเดียวกัน (BGR)
 INK   = (27, 20, 16)      # พื้นแผงโปร่งแสง        #10141B
 FG    = (243, 236, 231)   # อักษรหลัก              #E7ECF3
@@ -40,12 +41,8 @@ HAND_EDGES = [(0, 1), (1, 2), (2, 3), (3, 4), (0, 5), (5, 6), (6, 7), (7, 8),
               (5, 9), (9, 10), (10, 11), (11, 12), (9, 13), (13, 14), (14, 15),
               (15, 16), (13, 17), (17, 18), (18, 19), (19, 20), (0, 17)]
 
-try:                        # DejaVu มากับ matplotlib (dep ของ ultralytics อยู่แล้ว)
-    import matplotlib
-    _FDIR = Path(matplotlib.get_data_path()) / "fonts" / "ttf"
-    _REG, _BOLD = _FDIR / "DejaVuSans.ttf", _FDIR / "DejaVuSans-Bold.ttf"
-except Exception:
-    _REG = _BOLD = None
+FONT_DIR = Path(getattr(sys, "_MEIPASS", Path(__file__).parent)) / "fonts"   # Inter ที่มากับแอป — ตัวเดียวกับ UI ใน app.py
+_REG, _BOLD = FONT_DIR / "Inter-Regular.ttf", FONT_DIR / "Inter-Bold.ttf"
 _FONTS = {}
 
 
@@ -53,14 +50,12 @@ def font(px, bold=False):
     px = max(9, int(px))
     hit = _FONTS.get((px, bold))
     if hit is None:
-        for cand in ((_BOLD if bold else _REG),
-                     ("DejaVuSans-Bold.ttf" if bold else "DejaVuSans.ttf")):
-            try:
-                hit = ImageFont.truetype(str(cand), px)
-                break
-            except (OSError, TypeError):
-                hit = None
-        hit = hit or ImageFont.load_default(px)
+        try:
+            # BASIC: ข้อความบนเฟรมเป็นอังกฤษล้วน ไม่ต้องใช้ Raqm (ช้ากว่า 1.5 เท่า) · Inter ใน app/fonts ตัด hinting แล้ว
+            # (ตัว hinted เรนเดอร์ช้ากว่า ~4 เท่า — ป้ายต่อแก้ว 4 ใบกิน ~10ms/เฟรมในเธรดวิเคราะห์)
+            hit = ImageFont.truetype(str(_BOLD if bold else _REG), px, layout_engine=ImageFont.Layout.BASIC)
+        except OSError:                          # ไม่มีไฟล์ฟอนต์ (เช่นลืมแพ็ก) — ใช้ตัวในตัวของ Pillow ดีกว่าแอปล้ม
+            hit = ImageFont.load_default(px)
         _FONTS[(px, bold)] = hit
     return hit
 
@@ -189,18 +184,3 @@ def draw(frame, cups, hands, held_ids, insp, debug, confidences=None, zone=None)
         _put(T, pts[0][0], pts[0][1] + px(18), msg, font(15 * u, True), col, "lm")
 
     return _flush(frame, T)
-
-
-def splash(msg, width=1280):
-    """จอรอ (เปิดกล้อง / ต่อกล้องใหม่ / โหลดโมเดล) — สปินเนอร์ + ชื่อสถานี"""
-    w = int(width)
-    h = w * 9 // 16
-    img = np.full((h, w, 3), 11, np.uint8)
-    cx, cy, r = w // 2, int(h * 0.45), max(16, h // 20)
-    a = time.time() * 90
-    cv2.ellipse(img, (cx, cy), (r, r), 0, 0, 360, (40, 34, 30), max(2, h // 300), cv2.LINE_AA)
-    cv2.ellipse(img, (cx, cy), (r, r), 0, a % 360, a % 360 + 90, OK, max(2, h // 240), cv2.LINE_AA)
-    T = []
-    _put(T, cx, cy + r + h // 12, "TKK WORKSHOP", font(h / 30, True), FG, "ma")
-    _put(T, cx, cy + r + h // 12 + h // 18, msg, font(h / 42), MUTED, "ma")
-    return _flush(img, T)

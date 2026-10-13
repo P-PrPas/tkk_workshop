@@ -88,18 +88,22 @@ jobs:
       - name: Build (pack, self-test, installer)
         run: python installer/build.py
 
-      - name: Install the .pkg for real, replace the old name, reinstall, check the app (macOS)
+      - name: Install the .pkg for real, replace the old names, reinstall, check the app (macOS)
         if: runner.os == 'macOS'
         shell: bash
         run: |
-          PKG=$(ls dist/TKKWorkshop-*.pkg)
-          APP="/Applications/TKK Workshop.app"
-          # the app under its former name must be removed by the installer
-          sudo mkdir -p "/Applications/Inspection Station.app/Contents"
-          sudo touch "/Applications/Inspection Station.app/Contents/legacy.txt"
+          PKG=$(ls dist/Cuptick-*.pkg)
+          APP="/Applications/Cuptick.app"
+          # the app under its former names must be removed by the installer
+          for old in "TKK Workshop" "Inspection Station"; do
+            sudo mkdir -p "/Applications/$old.app/Contents"
+            sudo touch "/Applications/$old.app/Contents/legacy.txt"
+          done
           sudo installer -pkg "$PKG" -target /
           test -d "$APP"
-          test ! -e "/Applications/Inspection Station.app" || { echo "the old app was not removed"; exit 1; }
+          for old in "TKK Workshop" "Inspection Station"; do
+            test ! -e "/Applications/$old.app" || { echo "the old app $old was not removed"; exit 1; }
+          done
           # reinstall over the same version: a stale file inside the bundle must disappear
           sudo touch "$APP/Contents/stale.txt"
           sudo installer -pkg "$PKG" -target /
@@ -107,48 +111,53 @@ jobs:
           codesign --verify --deep --strict --verbose=2 "$APP"
           echo "quarantine attribute after install: [$(xattr -p com.apple.quarantine "$APP" 2>/dev/null || true)] (empty = good)"
           spctl --assess --type execute --verbose=2 "$APP" || echo "(Gatekeeper rejects an app that is not notarized: expected until signing is set up)"
-          "$APP/Contents/MacOS/TKKWorkshop" --selftest "$RUNNER_TEMP/installed.txt" || true
+          "$APP/Contents/MacOS/Cuptick" --selftest "$RUNNER_TEMP/installed.txt" || true
           cat "$RUNNER_TEMP/installed.txt"
           grep -q "SELFTEST OK" "$RUNNER_TEMP/installed.txt"
 
-      - name: Install the .exe silently in Thai, replace the old name, reinstall, check the app (Windows)
+      - name: Install the .exe silently in Thai, replace the old names, reinstall, check the app (Windows)
         if: runner.os == 'Windows'
         shell: pwsh
         run: |
-          $setup = Get-ChildItem dist\TKKWorkshop-*-setup.exe | Select-Object -First 1
-          $dir = Join-Path $env:RUNNER_TEMP "TKKWorkshopTest"
+          $setup = Get-ChildItem dist\Cuptick-*-setup.exe | Select-Object -First 1
+          $dir = Join-Path $env:RUNNER_TEMP "CuptickTest"
           $setupArgs = @("/VERYSILENT","/SUPPRESSMSGBOXES","/NORESTART","/LANG=thai","/DIR=$dir")
-          # a fake uninstall entry of the former product (Inspection Station): the installer must run it
-          $marker = Join-Path $env:RUNNER_TEMP "legacy_uninstalled.txt"
-          $fake = Join-Path $env:RUNNER_TEMP "fake_unins.cmd"
-          Set-Content -Path $fake -Value "@echo off`r`necho ran> `"$marker`""
-          $key = "HKCU:\Software\Microsoft\Windows\CurrentVersion\Uninstall\{7D3B2C1A-5E4F-4A8B-9C6D-1F2E3A4B5C6D}_is1"
-          New-Item -Path $key -Force | Out-Null
-          Set-ItemProperty -LiteralPath $key -Name UninstallString -Value "`"$fake`""
+          # fake uninstall entries of the former products (TKK Workshop, Inspection Station): the installer must run both
+          $legacy = @{ "{6E335DF4-E3A6-4923-8A83-FC1BF51C33C4}_is1" = "tkk"; "{7D3B2C1A-5E4F-4A8B-9C6D-1F2E3A4B5C6D}_is1" = "inspection" }
+          foreach ($id in $legacy.Keys) {
+            $marker = Join-Path $env:RUNNER_TEMP "legacy_$($legacy[$id]).txt"
+            $fake = Join-Path $env:RUNNER_TEMP "fake_unins_$($legacy[$id]).cmd"
+            Set-Content -Path $fake -Value "@echo off`r`necho ran> `"$marker`""
+            $key = "HKCU:\Software\Microsoft\Windows\CurrentVersion\Uninstall\$id"
+            New-Item -Path $key -Force | Out-Null
+            Set-ItemProperty -LiteralPath $key -Name UninstallString -Value "`"$fake`""
+          }
           Start-Process -FilePath $setup.FullName -ArgumentList $setupArgs -Wait
-          if (-not (Test-Path "$dir\TKKWorkshop.exe")) { throw "installer did not install the app" }
-          if (-not (Test-Path $marker)) { throw "the installer did not uninstall the former Inspection Station entry" }
+          if (-not (Test-Path "$dir\Cuptick.exe")) { throw "installer did not install the app" }
+          foreach ($name in $legacy.Values) {
+            if (-not (Test-Path (Join-Path $env:RUNNER_TEMP "legacy_$name.txt"))) { throw "the installer did not uninstall the former $name entry" }
+          }
           # reinstall over the same folder: a stale file in the program folder must be removed
           Set-Content -Path "$dir\_internal\stale.txt" -Value "stale"
           Start-Process -FilePath $setup.FullName -ArgumentList $setupArgs -Wait
           if (Test-Path "$dir\_internal\stale.txt") { throw "reinstall left a stale file behind" }
-          if (-not (Test-Path "$dir\TKKWorkshop.exe")) { throw "reinstall removed the app" }
+          if (-not (Test-Path "$dir\Cuptick.exe")) { throw "reinstall removed the app" }
           if (-not (Test-Path "$dir\unins000.exe")) { throw "uninstaller missing" }
           $out = Join-Path $env:RUNNER_TEMP "installed.txt"
-          Start-Process -FilePath "$dir\TKKWorkshop.exe" -ArgumentList "--selftest","$out" -Wait
+          Start-Process -FilePath "$dir\Cuptick.exe" -ArgumentList "--selftest","$out" -Wait
           Get-Content $out
           if (-not (Select-String -Path $out -Pattern "SELFTEST OK" -Quiet)) { throw "installed app self-test failed" }
           Start-Process -FilePath "$dir\unins000.exe" -ArgumentList "/VERYSILENT","/SUPPRESSMSGBOXES" -Wait
           $gone = $false
-          1..60 | ForEach-Object { if (-not (Test-Path "$dir\TKKWorkshop.exe")) { $gone = $true; return }; Start-Sleep -Seconds 1 }
+          1..60 | ForEach-Object { if (-not (Test-Path "$dir\Cuptick.exe")) { $gone = $true; return }; Start-Sleep -Seconds 1 }
           if (-not $gone) { throw "uninstall left the app behind" }
 
       - uses: actions/upload-artifact@v4
         with:
           name: installer-${{ matrix.name }}
           path: |
-            dist/TKKWorkshop-*-setup.exe
-            dist/TKKWorkshop-*.pkg
+            dist/Cuptick-*-setup.exe
+            dist/Cuptick-*.pkg
           if-no-files-found: error
 
   release:
@@ -165,5 +174,5 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           gh release create "$GITHUB_REF_NAME" out/* -R "${{ github.repository }}" \
-            --title "TKK Workshop ${GITHUB_REF_NAME#app-v}" \
+            --title "Cuptick ${GITHUB_REF_NAME#app-v}" \
             --notes "Windows (.exe) and macOS Apple Silicon (.pkg) installers. Not code-signed: see docs/05-installer.md for the first-launch steps."

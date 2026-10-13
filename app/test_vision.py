@@ -2,6 +2,7 @@
 
 รัน:  python app/test_vision.py
 """
+import shutil
 import tempfile
 import time
 import numpy as np
@@ -553,6 +554,33 @@ def test_camera_switch_never_serves_the_old_camera():
         cam.release()
 
 
+def test_open_camera_opens_the_configured_one_first():
+    """เปิดแอปเปิดกล้องที่ config ระบุทันที ไม่สำรวจทั้งชุดก่อน (Windows เปิดทีละตัวช้า) · รายการกล้องอื่นตามมาเบื้องหลัง
+    · กล้องที่ระบุเปิดไม่ได้ → ตกไปตัวแรกที่เปิดได้"""
+    opened = []
+
+    class FakeCap:
+        works = {0, 2}
+        def __init__(self, idx):
+            self.idx = idx
+            opened.append(idx)
+        def set(self, *a): pass
+        def isOpened(self): return self.idx in self.works
+        def read(self): return (True, np.zeros((4, 4, 3), np.uint8)) if self.idx in self.works else (False, None)
+        def release(self): pass
+
+    cfg = {"camera_index": 2, "camera_probe": 3, "mirror": False}
+    with patch("vision.cv2.VideoCapture", FakeCap), patch("builtins.print"):
+        cam = vision.open_camera(cfg)
+        assert cam.index == 2 and opened[0] == 2                # ตัวที่ระบุถูกเปิดก่อนใคร
+        time.sleep(0.3)
+        assert cam.available == [0, 2], cam.available           # 1 เปิดไม่ได้ · 0 มาทีหลังเบื้องหลัง
+        cam.release()
+        cam = vision.open_camera({**cfg, "camera_index": 1})    # ระบุตัวที่ไม่มี
+        assert cam.index == 0 and cam.available == [0, 2]
+        cam.release()
+
+
 # ─────────── ตัวติดตั้ง: พาธของแอปที่แพ็กแล้ว ───────────
 def test_installed_app_user_config_and_files():
     """แอปที่ติดตั้งแล้วแก้ค่าที่มากับแอปไม่ได้ — config / โมเดลสำรองของผู้ใช้อยู่ที่ user_dir() และทับของที่มากับแอป"""
@@ -580,11 +608,11 @@ def test_user_dir_per_platform():
     """ที่เก็บไฟล์ผู้ใช้ตามระบบ — ตรงกับที่เขียนไว้ใน docs/05 และข้อความในตัวติดตั้ง"""
     import userdir
     with patch("userdir.sys.platform", "win32"), patch.dict("os.environ", {"APPDATA": "C:/Users/u/AppData/Roaming"}):
-        assert userdir.user_dir() == Path("C:/Users/u/AppData/Roaming/TKKWorkshop")
+        assert userdir.user_dir() == Path("C:/Users/u/AppData/Roaming/Cuptick")
     with patch("userdir.sys.platform", "darwin"), patch("userdir.Path.home", return_value=Path("/Users/u")):
-        assert userdir.user_dir() == Path("/Users/u/Library/Application Support/TKKWorkshop")
+        assert userdir.user_dir() == Path("/Users/u/Library/Application Support/Cuptick")
     with patch("userdir.sys.platform", "linux"), patch.dict("os.environ", {"XDG_CONFIG_HOME": "/x"}):
-        assert userdir.user_dir() == Path("/x/TKKWorkshop")
+        assert userdir.user_dir() == Path("/x/Cuptick")
 
 
 def test_pick_device_skips_a_gpu_that_does_not_work():
@@ -606,10 +634,10 @@ def test_pick_device_skips_a_gpu_that_does_not_work():
 
 
 def test_legacy_user_dir_is_migrated_once():
-    """config / โมเดลของผู้ใช้ในโฟลเดอร์ชื่อเดิม (Inspection Station) ถูกคัดลอกมาโฟลเดอร์ใหม่ครั้งเดียว โดยไม่เอา log ไป"""
+    """config / โมเดลของผู้ใช้ในโฟลเดอร์ชื่อเดิม (Inspection Station / TKK Workshop) ถูกคัดลอกมาโฟลเดอร์ใหม่ครั้งเดียว โดยไม่เอา log ไป"""
     import userdir
     with tempfile.TemporaryDirectory() as d:
-        new, old = Path(d) / "TKKWorkshop", Path(d) / "InspectionStation"
+        new, old = Path(d) / "Cuptick", Path(d) / "InspectionStation"
         with patch("userdir.user_dir", return_value=new):
             userdir.migrate_legacy_user_dir()                                   # ไม่มีของเดิม ไม่ทำอะไร
             assert not new.exists()
@@ -624,6 +652,13 @@ def test_legacy_user_dir_is_migrated_once():
             userdir.migrate_legacy_user_dir()
             assert (new / "config.yaml").read_text(encoding="utf-8") == "conf: 0.5\n"
             assert (old / "config.yaml").exists()                               # ของเดิมไม่ถูกลบ
+        shutil.rmtree(new)                                                      # มีสองชื่อเดิม: เอา TKKWorkshop (ใหม่กว่า)
+        newer = Path(d) / "TKKWorkshop"
+        newer.mkdir()
+        (newer / "config.yaml").write_text("conf: 0.9\n", encoding="utf-8")
+        with patch("userdir.user_dir", return_value=new):
+            userdir.migrate_legacy_user_dir()
+        assert (new / "config.yaml").read_text(encoding="utf-8") == "conf: 0.9\n"
 
 
 if __name__ == "__main__":
@@ -631,6 +666,7 @@ if __name__ == "__main__":
     test_pick_device_skips_a_gpu_that_does_not_work()
     test_user_dir_per_platform()
     test_installed_app_user_config_and_files()
+    test_open_camera_opens_the_configured_one_first()
     test_camera_switch_never_serves_the_old_camera()
     test_resolve_model_path()
     test_zone_geometry()
