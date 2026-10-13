@@ -7,6 +7,7 @@
 ตัวติดตั้ง (Inno Setup / .dmg) ห่อผลลัพธ์นี้อีกชั้น — ดู installer/build.py
 """
 import os
+import platform
 import sys
 from pathlib import Path
 
@@ -73,7 +74,7 @@ if sys.platform == "darwin":
             "CFBundleDisplayName": "Cuptick",
             "CFBundleShortVersionString": VERSION,
             "NSHighResolutionCapable": True,
-            "LSMinimumSystemVersion": "12.0",
+            "LSMinimumSystemVersion": "13.0" if platform.machine() == "x86_64" else "12.0",   # ต้องตรงกับ MAC_MIN_OS ใน build.py
             # ไม่มีข้อความนี้ macOS จะปิดแอปทันทีที่เปิดกล้อง และไม่ขึ้นหน้าต่างขอสิทธิ์
             "NSCameraUsageDescription": "Cuptick ใช้กล้องเพื่อตรวจจับแก้วและมือแบบเรียลไทม์",
         },

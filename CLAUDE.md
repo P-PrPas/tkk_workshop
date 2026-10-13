@@ -61,6 +61,8 @@ tkk_workshop/            ← repo นี้
   ข้อความบนวิดเจ็ตเป็นไทยได้ (font fallback รายตัวอักษร) แต่ข้อความที่วาดลงบนเฟรม
   (PIL/Inter) ยังต้องเป็นอังกฤษ · **ห้ามใช้ QSS `background:` บน widget แม่** — มันไหลลง
   ลูกทุกตัว ใช้ `ground()` (QPalette) แทน
+- **Mac Intel** (ตัวติดตั้ง `-macos-x64.pkg`): torch สูงสุด 2.2.2 + NumPy<2 · onnxruntime ≤1.23 · `onnx` ต้อง 1.22 (1.23 ชน protobuf ของ mediapipe 0.10.21) ·
+  สร้างได้เฉพาะ runner `macos-15-intel` · macOS 13+ · ตรวจแก้วด้วย ONNX บน CPU
 - เครื่องพัฒนามี Tesla V100 32GB แต่ **ไม่มีกล้อง** — ทดสอบ realtime บนเครื่องนี้ไม่ได้
 
 ## คำสั่งที่ใช้บ่อย

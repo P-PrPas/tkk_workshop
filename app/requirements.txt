@@ -6,6 +6,8 @@ mediapipe==1.0.1; sys_platform != "darwin"
 # ไม่ว่าจะตั้ง delegate CPU / ปิด GPU / โหลดโมเดลแบบไหน (ทดสอบบน macOS 14 CI และ MacBook Pro จริง macOS 26.2) — 0.10.21 ใช้ API เดียวกันและทำงานได้
 # 0.10.21 มี wheel เฉพาะ Python 3.9–3.12 จึงต้องใช้ Python 3.12 บน Mac
 mediapipe==0.10.21; sys_platform == "darwin"
+# Mac Intel: torch รุ่นสุดท้ายที่มี wheel ให้คือ 2.2.2 (pip เลือกเองตามแพลตฟอร์ม) และ build กับ NumPy 1.x — NumPy 2 ทำ import ล้ม
+numpy<2; sys_platform == "darwin" and platform_machine == "x86_64"
 opencv-python==4.10.*
 pillow==12.*        # HUD วาดตัวหนังสือด้วย PIL + DejaVu (มากับ matplotlib/ultralytics อยู่แล้ว)
 pyyaml==6.*

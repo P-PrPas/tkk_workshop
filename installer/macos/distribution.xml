@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- productbuild distribution for the macOS installer. @VERSION@ is filled in by installer/build.py.
+<!-- productbuild distribution for the macOS installer. @VERSION@ @ARCH@ @MINOS@ are filled in by installer/build.py (arm64 and x86_64 packages differ only in these).
      The Installer app shows the Welcome / Destination / Install / Summary pages in the system language
      (resources/en.lproj, resources/th.lproj; English when the language is neither). -->
 <installer-gui-script minSpecVersion="2">
@@ -8,11 +8,11 @@
     <conclusion file="conclusion.html" mime-type="text/html"/>
     <background file="logo.png" alignment="bottomleft" scaling="none"/>
     <background-darkAqua file="logo.png" alignment="bottomleft" scaling="none"/>
-    <options customize="never" require-scripts="false" hostArchitectures="arm64"/>
+    <options customize="never" require-scripts="false" hostArchitectures="@ARCH@"/>
     <domains enable_localSystem="true" enable_currentUserHome="false" enable_anywhere="false"/>
     <volume-check>
         <allowed-os-versions>
-            <os-version min="12.0"/>
+            <os-version min="@MINOS@"/>
         </allowed-os-versions>
     </volume-check>
     <choices-outline>
