@@ -63,7 +63,7 @@ gh release create models-v2 app/models/cup_v2.pt app/models/cup_v2.onnx \
 ⚠️ repo เป็น public — **ทุกคนดาวน์โหลดโมเดลได้** คำสั่งนี้เผยแพร่ไฟล์ จึงรันเมื่อพร้อมเท่านั้น
 
 ### สร้างบน GitHub Actions
-- **ลองสร้าง:** Actions → *Build installers* → *Run workflow* → ดาวน์โหลดไฟล์จาก **Artifacts** ของ run นั้น (สั่งมือได้เมื่อไฟล์ workflow อยู่บน `main` แล้ว) · PR ที่แก้ไฟล์ใน `installer/` จะสร้างให้เองด้วย
+- **ลองสร้าง:** Actions → *Build installers* → *Run workflow* → ดาวน์โหลดไฟล์จาก **Artifacts** ของ run นั้น (สั่งมือได้เมื่อไฟล์ workflow อยู่บน `main` แล้ว) · สั่งกับสาขาอื่นได้ (เลือก branch) ก่อน merge · อัตโนมัติเฉพาะ push เข้า `main`
 - **ปล่อยจริง:** `git tag app-v1.0.0 && git push origin app-v1.0.0` → ตัวติดตั้งทั้งสองแนบกับ Release `app-v1.0.0` (เปลี่ยนเลขรุ่นที่ไฟล์ `VERSION` ก่อน)
 
 ในตัวสร้างทำตามนี้ — ถ้าขั้นไหนพังจะไม่ได้ไฟล์:
@@ -115,7 +115,8 @@ Windows: ถ้าต้องการให้ SmartScreen หายต้อ�
 - **Windows ไม่ใช้ GPU NVIDIA:** torch ในตัวติดตั้งเป็นรุ่น CPU (รุ่น CUDA ทำให้ตัวติดตั้งใหญ่หลาย GB) ตรวจแก้วด้วย ONNX บน CPU แทน
 - **ไม่มีการอัปเดตอัตโนมัติในตัวแอป:** รุ่นใหม่ = ติดตั้งทับตัวเดิม (Windows: `AppId` เดิม จึงอัปเกรดทับได้ · macOS: `.pkg` แทนที่แอปเดิมให้)
 - **ตัวติดตั้งตามโค้ดล่าสุดอย่างไร:** workflow สร้างให้เองเมื่อไฟล์ที่ถูกแพ็กเปลี่ยน (`app/` ยกเว้น `test_vision.py`, `installer/`, `data`, `VERSION`) —
-  push เข้า `main` = ตัวติดตั้งทั้งสามตัวรุ่นล่าสุดอยู่ที่ Actions → run นั้น → Artifacts (เก็บ 90 วัน) · PR ที่แตะไฟล์พวกนี้ก็สร้างให้ดู ·
+  push เข้า `main` = ตัวติดตั้งทั้งสามตัวรุ่นล่าสุดอยู่ที่ Actions → run นั้น → Artifacts (เก็บ 90 วัน) · **อัตโนมัติเฉพาะ `main`** (ถือเป็น production) — PR ไม่สร้างให้ ·
+  อยากลองสาขาก่อน merge: Actions → Build installers → Run workflow แล้วเลือก branch (หรือ `gh workflow run build-installers.yml --ref <branch>`) ·
   **แต่ Release (ที่แจกลูกค้า) สร้างเมื่อ push tag `app-v*` เท่านั้น** — เดิมแก้โค้ดแอปอย่างเดียวไม่เคยทำให้สร้างตัวติดตั้งใหม่เลย
 - **ตัวสร้างทดสอบ "ติดตั้งจริงแล้วรัน" ให้เอง** ทุกครั้ง (รวมถอนชื่อเดิมและติดตั้งซ้ำ ตรวจว่าไฟล์ค้างหาย): Windows ติดตั้งแบบเงียบเป็นภาษาไทย → รัน `--selftest` ของแอปที่ติดตั้ง → ถอนการติดตั้ง · macOS ติดตั้ง `.pkg` ด้วย `installer` → `codesign --verify` → ตรวจว่าไม่มีธง quarantine → รัน `--selftest` ของแอปที่ติดตั้ง
 - **MediaPipe บน macOS:** รุ่น 1.0.1 abort ทั้งโปรเซสตอนสร้างตัวตรวจมือ (เจอบน Mac จริง macOS 26.2 และบน CI) จึงใช้ 0.10.21 เฉพาะ macOS ดู `app/requirements.txt` — CI ตรวจตัวตรวจมือในตัวติดตั้งทุกครั้งและล้มถ้าไม่ผ่าน

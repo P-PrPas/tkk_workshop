@@ -1,9 +1,9 @@
 name: Build installers
 
 # สร้างตัวติดตั้งบนเครื่อง Windows / macOS (Apple Silicon + Intel) จริง (เครื่องพัฒนาเป็น Linux สร้างให้ไม่ได้)
-#   สร้างให้อัตโนมัติเมื่อไฟล์ที่ถูกแพ็กเปลี่ยน (app/ installer/ data/ VERSION): push เข้า main = ตัวติดตั้งรุ่นล่าสุดอยู่ที่ Artifacts
-#   (เก็บ 90 วัน) · PR ที่แตะไฟล์พวกนี้ = สร้างให้ดูว่ายังพังไหม · แก้แค่เอกสาร/เครื่องมือ = ไม่สร้าง (ใช้เครื่องนานเป็นสิบนาที)
-#   รันมือ:   Actions > Build installers > Run workflow  → ไฟล์อยู่ที่ Artifacts ของ run นั้น (ต้องมีไฟล์นี้บน main ก่อนถึงจะสั่งได้)
+#   อัตโนมัติเฉพาะ main (= production): push เข้า main ที่แตะไฟล์ที่ถูกแพ็ก (app/ installer/ data/ VERSION) → ตัวติดตั้งรุ่นล่าสุดอยู่ที่ Artifacts
+#   (เก็บ 90 วัน) · PR ไม่สร้างให้ (ใช้เครื่องนานเป็นสิบนาที) — อยากลองสาขาก่อน merge ให้รันมือเลือก branch นั้น
+#   รันมือ:   Actions > Build installers > Run workflow (เลือก branch ได้) → ไฟล์อยู่ที่ Artifacts ของ run นั้น (ต้องมีไฟล์นี้บน main ก่อนถึงจะสั่งได้)
 #   macOS เซ็น + notarize เองเมื่อมี secrets ครบ (ดู docs/05-installer.md) — ไม่มี = ตัวติดตั้งที่ยังไม่เซ็น
 #   ปล่อยจริง: git tag app-v1.0.0 && git push origin app-v1.0.0  → แนบตัวติดตั้งกับ Release ชื่อตาม tag
 # ต้องมี Release "models-v2" ที่แนบ cup_v2.pt + cup_v2.onnx ไว้ก่อน (ดู docs/05-installer.md)
@@ -12,8 +12,6 @@ on:
   push:
     tags: ["app-v*"]
     branches: [main]
-    paths: ["app/**", "!app/test_vision.py", "installer/**", "data", ".github/workflows/build-installers.yml", "VERSION"]
-  pull_request:                          # รายการเดียวกับ push (ไม่ใช้ YAML anchor — กันเวอร์ชันของ Actions ที่ไม่รองรับ)
     paths: ["app/**", "!app/test_vision.py", "installer/**", "data", ".github/workflows/build-installers.yml", "VERSION"]
 
 concurrency:                             # push ซ้อนกัน = ยกเลิกรอบเก่า (ไม่ยกเลิกตอนปล่อยรุ่นด้วย tag)
