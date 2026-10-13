@@ -236,7 +236,7 @@ python app/test_vision.py
 
 ### C · Install the packaged app (Windows / macOS)
 
-For people who just want to use it: download the installer (`.exe` for Windows, `.pkg` for Apple Silicon Macs) from the
+For people who just want to use it: download the installer (`.exe` for Windows, `-macos-arm64.pkg` for Apple Silicon Macs, `-macos-x64.pkg` for Intel Macs) from the
 [Releases](https://github.com/P-PrPas/tkk_workshop/releases) page and open it. Python, the models and everything else
 are inside, and no internet is needed. Both are standard installer wizards (English / Thai on Windows; the Mac one follows the system language). They are **not code-signed yet**, so the first open needs one extra
 click; the steps, and how the installers are built, are in [`docs/05-installer.md`](docs/05-installer.md).

@@ -5,7 +5,8 @@
     python installer/build.py --no-package     # หยุดหลังแพ็ก+ทดสอบ (Linux หรือเครื่องที่ไม่มี Inno Setup)
 
 ก่อนรัน: วางโมเดลไว้ที่ app/models/ (cup_v2.pt เป็นอย่างน้อย · เครื่อง Windows ใส่ .onnx ด้วย) และ git submodule update --init
-ผลลัพธ์: dist/Cuptick-<VERSION>-win-x64-setup.exe · dist/Cuptick-<VERSION>-macos-arm64.pkg
+ผลลัพธ์: dist/Cuptick-<VERSION>-win-x64-setup.exe · dist/Cuptick-<VERSION>-macos-arm64.pkg (Apple Silicon) · -macos-x64.pkg (Mac Intel)
+แต่ละเครื่องสร้างได้เฉพาะชิปของตัวเอง — Mac Intel ต้องสร้างบนเครื่อง Intel (CI ใช้ macos-15-intel)
 macOS เซ็น + notarize ให้เมื่อมีตัวแปรสภาพแวดล้อมครบ (ดู docs/05-installer.md): MACOS_CODESIGN_IDENTITY, MACOS_INSTALLER_IDENTITY,
 APPLE_API_KEY_PATH, APPLE_API_KEY_ID, APPLE_API_ISSUER — ถ้าไม่มี จะได้ตัวติดตั้งที่ยังไม่เซ็น
 """
@@ -62,10 +63,16 @@ def notarize(path):
     run(["xcrun", "stapler", "staple", path])
 
 
+# ชิป → ข้อความในหน้าต้อนรับ · macOS ขั้นต่ำ (13: wheel ของ PySide6 / onnxruntime / onnx ที่ลงในตัวแอปติดแท็ก macosx_13_0)
+MAC_CHIP = {"arm64": {"en": "an Apple silicon chip (M1 or later)", "th": "ชิป Apple silicon (M1 ขึ้นไป)"},
+            "x86_64": {"en": "an Intel processor", "th": "ซีพียู Intel"}}
+MAC_MIN_OS = {"arm64": "12.0", "x86_64": "13.0"}
+
+
 def package_macos(dist, work):
     """ตัวติดตั้ง macOS แบบมาตรฐาน (.pkg): ต้อนรับ → ปลายทาง → ติดตั้ง → สรุป · สคริปต์หลังติดตั้งล้างธง quarantine ของแอป"""
-    arch = platform.machine().replace("x86_64", "x64")
-    out = dist / f"Cuptick-{VERSION}-macos-{arch}.pkg"
+    chip = platform.machine()                      # arm64 | x86_64
+    out = dist / f"Cuptick-{VERSION}-macos-{chip.replace('x86_64', 'x64')}.pkg"
     out.unlink(missing_ok=True)
     stage = work / "pkg"
     shutil.rmtree(stage, ignore_errors=True)
@@ -76,10 +83,16 @@ def package_macos(dist, work):
     run(["plutil", "-replace", "0.BundleIsRelocatable", "-bool", "NO", plist])                  # ติดตั้งที่ /Applications เสมอ
     run(["pkgbuild", "--root", stage / "root", "--component-plist", plist, "--identifier", "dev.tkk.cuptick",
          "--version", VERSION, "--install-location", "/Applications", "--scripts", "installer/macos/scripts", stage / "app.pkg"])
+    min_os = MAC_MIN_OS[chip]
     shutil.copytree(ROOT / "installer" / "macos" / "resources", stage / "resources")
+    for lang in ("en", "th"):                      # หน้าต้อนรับบอกชิป/macOS ขั้นต่ำของตัวติดตั้งตัวนี้
+        page = stage / "resources" / f"{lang}.lproj" / "welcome.html"
+        page.write_text(page.read_text(encoding="utf-8").replace("@CHIP@", MAC_CHIP[chip][lang]).replace("@MINOS@", min_os.split(".")[0]),
+                        encoding="utf-8")
     shutil.copy(ROOT / "installer" / "assets" / "pkg_logo.png", stage / "resources" / "logo.png")
     (stage / "distribution.xml").write_text(
-        (ROOT / "installer" / "macos" / "distribution.xml").read_text(encoding="utf-8").replace("@VERSION@", VERSION), encoding="utf-8")
+        (ROOT / "installer" / "macos" / "distribution.xml").read_text(encoding="utf-8")
+        .replace("@VERSION@", VERSION).replace("@ARCH@", chip).replace("@MINOS@", min_os), encoding="utf-8")
     cmd = ["productbuild", "--distribution", stage / "distribution.xml", "--resources", stage / "resources", "--package-path", stage]
     if os.environ.get("MACOS_INSTALLER_IDENTITY"):
         cmd += ["--sign", os.environ["MACOS_INSTALLER_IDENTITY"]]

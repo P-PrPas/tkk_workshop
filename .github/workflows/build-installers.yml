@@ -1,6 +1,8 @@
 name: Build installers
 
-# สร้างตัวติดตั้งบนเครื่อง Windows / macOS จริง (เครื่องพัฒนาเป็น Linux สร้างให้ไม่ได้)
+# สร้างตัวติดตั้งบนเครื่อง Windows / macOS (Apple Silicon + Intel) จริง (เครื่องพัฒนาเป็น Linux สร้างให้ไม่ได้)
+#   สร้างให้อัตโนมัติเมื่อไฟล์ที่ถูกแพ็กเปลี่ยน (app/ installer/ data/ VERSION): push เข้า main = ตัวติดตั้งรุ่นล่าสุดอยู่ที่ Artifacts
+#   (เก็บ 90 วัน) · PR ที่แตะไฟล์พวกนี้ = สร้างให้ดูว่ายังพังไหม · แก้แค่เอกสาร/เครื่องมือ = ไม่สร้าง (ใช้เครื่องนานเป็นสิบนาที)
 #   รันมือ:   Actions > Build installers > Run workflow  → ไฟล์อยู่ที่ Artifacts ของ run นั้น (ต้องมีไฟล์นี้บน main ก่อนถึงจะสั่งได้)
 #   macOS เซ็น + notarize เองเมื่อมี secrets ครบ (ดู docs/05-installer.md) — ไม่มี = ตัวติดตั้งที่ยังไม่เซ็น
 #   ปล่อยจริง: git tag app-v1.0.0 && git push origin app-v1.0.0  → แนบตัวติดตั้งกับ Release ชื่อตาม tag
@@ -9,8 +11,14 @@ on:
   workflow_dispatch:
   push:
     tags: ["app-v*"]
-  pull_request:                          # แก้ตัวติดตั้งแล้วเปิด PR = สร้างให้ดูเลยว่ายังพังไหม (ไม่รันทุก PR: ใช้เครื่อง Windows/macOS นานเป็นสิบนาที)
-    paths: ["installer/**", ".github/workflows/build-installers.yml", "VERSION"]
+    branches: [main]
+    paths: ["app/**", "!app/test_vision.py", "installer/**", "data", ".github/workflows/build-installers.yml", "VERSION"]
+  pull_request:                          # รายการเดียวกับ push (ไม่ใช้ YAML anchor — กันเวอร์ชันของ Actions ที่ไม่รองรับ)
+    paths: ["app/**", "!app/test_vision.py", "installer/**", "data", ".github/workflows/build-installers.yml", "VERSION"]
+
+concurrency:                             # push ซ้อนกัน = ยกเลิกรอบเก่า (ไม่ยกเลิกตอนปล่อยรุ่นด้วย tag)
+  group: build-installers-${{ github.ref }}
+  cancel-in-progress: ${{ !startsWith(github.ref, 'refs/tags/') }}
 
 permissions:
   contents: write        # แนบไฟล์กับ Release ตอน push tag
@@ -23,8 +31,10 @@ jobs:
         include:
           - os: windows-latest
             name: windows
-          - os: macos-14                 # Apple Silicon (arm64) — ไม่มีรุ่น Intel
+          - os: macos-14                 # Apple Silicon (arm64)
             name: macos-arm64
+          - os: macos-15-intel           # Mac Intel (x86_64) — ต้องสร้างบนเครื่อง Intel จริง · torch 2.2.2 + ONNX บน CPU (ดู docs/05)
+            name: macos-x64
     runs-on: ${{ matrix.os }}
     env:
       APPLE_SIGNING: ${{ secrets.APPLE_CERT_APP_P12_BASE64 != '' && 'yes' || 'no' }}
@@ -175,4 +185,4 @@ jobs:
         run: |
           gh release create "$GITHUB_REF_NAME" out/* -R "${{ github.repository }}" \
             --title "Cuptick ${GITHUB_REF_NAME#app-v}" \
-            --notes "Windows (.exe) and macOS Apple Silicon (.pkg) installers. Not code-signed: see docs/05-installer.md for the first-launch steps."
+            --notes "Windows (.exe), macOS Apple Silicon (arm64 .pkg) and macOS Intel (x64 .pkg) installers. Not code-signed: see docs/05-installer.md for the first-launch steps."

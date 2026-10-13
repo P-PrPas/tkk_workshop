@@ -1,16 +1,16 @@
-# 05 — ตัวติดตั้ง (Windows / macOS)
+# 05 — ตัวติดตั้ง (Windows / macOS Apple Silicon / macOS Intel)
 
 ห่อแอปทั้งตัว (Python + torch + ultralytics + MediaPipe + Qt + โมเดล) ให้ทีม sales ติดตั้งแล้วใช้ได้เลย
 ไม่ต้องลง Python ไม่ต้องใช้อินเทอร์เน็ต
 
-| | Windows | macOS |
-|---|---|---|
-| ไฟล์ | `Cuptick-<รุ่น>-win-x64-setup.exe` | `Cuptick-<รุ่น>-macos-arm64.pkg` |
-| รูปแบบ | วิซาร์ดมาตรฐาน (Inno Setup) | วิซาร์ดมาตรฐานของ macOS (`.pkg`) |
-| ภาษา | **เลือกได้** อังกฤษ / ไทย ที่หน้าแรก | ตามภาษาของระบบ (อังกฤษ / ไทย) — macOS ไม่มีตัวเลือกภาษาในตัวติดตั้ง |
-| ชิป | x64 | **Apple Silicon (M1–M4) เท่านั้น** (ไม่มี Mac Intel) |
-| ตรวจแก้ว | ONNX บน CPU (torch ในตัวติดตั้งเป็นรุ่น CPU) | torch + GPU ของชิป (MPS) |
-| เซ็นรับรอง | ยังไม่เซ็น → SmartScreen เตือน | เซ็น + notarize ได้เมื่อมี Apple Developer ID (ดูด้านล่าง) · ยังไม่มี → macOS เตือน |
+| | Windows | macOS Apple Silicon | macOS Intel |
+|---|---|---|---|
+| ไฟล์ | `Cuptick-<รุ่น>-win-x64-setup.exe` | `Cuptick-<รุ่น>-macos-arm64.pkg` | `Cuptick-<รุ่น>-macos-x64.pkg` |
+| รูปแบบ | วิซาร์ดมาตรฐาน (Inno Setup) | วิซาร์ดมาตรฐานของ macOS (`.pkg`) | เหมือน Apple Silicon |
+| ภาษา | **เลือกได้** อังกฤษ / ไทย ที่หน้าแรก | ตามภาษาของระบบ (อังกฤษ / ไทย) — macOS ไม่มีตัวเลือกภาษาในตัวติดตั้ง | เหมือน Apple Silicon |
+| เครื่องที่ใช้ได้ | x64 | M1–M4 · macOS 12+ (ตั้ง `hostArchitectures=arm64` ไว้ให้ Mac Intel ติดตั้งไม่ได้) | ซีพียู Intel · macOS 13+ (บน Apple Silicon ตั้งใจให้ใช้ตัว arm64 แทน — ตัว x64 อาจติดตั้งผ่าน Rosetta ได้แต่ช้า · ยังไม่ได้ลอง) |
+| ตรวจแก้ว | ONNX บน CPU (torch ในตัวติดตั้งเป็นรุ่น CPU) | torch + GPU ของชิป (MPS) | ONNX บน CPU (ไม่มี GPU path · torch 2.2.2 คือรุ่นสุดท้ายที่มี wheel ให้ Mac Intel) |
+| เซ็นรับรอง | ยังไม่เซ็น → SmartScreen เตือน | เซ็น + notarize ได้เมื่อมี Apple Developer ID (ดูด้านล่าง) · ยังไม่มี → macOS เตือน | เหมือน Apple Silicon (ใช้ secrets ชุดเดียวกัน) |
 
 เครื่องพัฒนาเป็น Linux สร้างตัวติดตั้ง Windows/macOS เองไม่ได้ จึงสร้างบน **GitHub Actions**
 (`.github/workflows/build-installers.yml`) ที่ใช้เครื่อง Windows/macOS จริง
@@ -34,7 +34,7 @@
 ### macOS บอกว่า "Apple could not verify … is free of malware" มีแต่ปุ่ม Done / Move to Trash
 เป็นหน้าต่างมาตรฐานของ macOS สำหรับไฟล์ที่ยังไม่ผ่านการรับรอง (notarization) ของ Apple **ไม่ใช่ไวรัส** วิธีผ่าน เลือกอย่างใดอย่างหนึ่ง:
 1. กด Done แล้วไป **ตั้งค่าระบบ → ความเป็นส่วนตัวและความปลอดภัย** เลื่อนลงล่าง กด **Open Anyway** ตรงรายการที่ขึ้นชื่อไฟล์ แล้วใส่รหัสผ่าน
-2. หรือใช้ Terminal (ไม่ผ่านด่านนี้เลย): `sudo installer -pkg ~/Downloads/Cuptick-1.0.0-macos-arm64.pkg -target /`
+2. หรือใช้ Terminal (ไม่ผ่านด่านนี้เลย): `sudo installer -pkg ~/Downloads/Cuptick-1.0.0-macos-arm64.pkg -target /` (Mac Intel: `…-macos-x64.pkg`)
 3. หรือล้างธงก่อนเปิด: `xattr -d com.apple.quarantine ~/Downloads/Cuptick-1.0.0-macos-arm64.pkg`
 
 **ที่ทำให้หายขาดมีทางเดียว:** เซ็นรับรองและ notarize ด้วยบัญชี Apple Developer Program (ราว $99/ปี) ตัวสร้างรองรับแล้ว ดูหัวข้อ "เซ็นรับรองและ notarize" ด้านล่าง
@@ -108,9 +108,15 @@ Windows: ถ้าต้องการให้ SmartScreen หายต้อ�
 
 ## เรื่องที่ควรรู้ / ยังไม่ได้ทำ
 
-- **Mac Intel ไม่รองรับ:** torch รุ่นสุดท้ายที่มี wheel สำหรับ Mac Intel คือ 2.2 ต้องแยกการสร้างและทดสอบต่างหาก
+- **Mac Intel:** สร้างบน runner `macos-15-intel` เท่านั้น (แพ็กข้ามชิปไม่ได้) · torch รุ่นสุดท้ายที่มี wheel ให้คือ 2.2.2 (ต้องใช้ NumPy 1.x) ·
+  `onnxruntime` ปัก 1.23.* (รุ่นสุดท้ายที่มี wheel) และ `onnx` ปัก **1.22.*** เพราะ 1.23 ต้องการ protobuf ≥ 6.31 ชนกับ mediapipe 0.10.21 ที่ต้องการ protobuf < 5 ·
+  macOS ขั้นต่ำ 13 ตามแท็กของ wheel (onnxruntime, PySide6) · ตัวติดตั้งทั้งสองชิปจึงใช้ `hostArchitectures` ต่างกัน (`build.py` เติมให้)
+- **ยังไม่ได้ลองบน Mac Intel จริง:** CI ตรวจได้แค่ว่าติดตั้งและ `--selftest` ผ่าน (รวมตัวตรวจมือ MediaPipe 0.10.21 บน x86_64 ซึ่งเป็นจุดที่เคยพังบน arm64) · ความเร็วบน CPU Intel จริงและหน้าต่างขอสิทธิ์กล้องยังไม่มีใครดู
 - **Windows ไม่ใช้ GPU NVIDIA:** torch ในตัวติดตั้งเป็นรุ่น CPU (รุ่น CUDA ทำให้ตัวติดตั้งใหญ่หลาย GB) ตรวจแก้วด้วย ONNX บน CPU แทน
-- **ไม่มีการอัปเดตอัตโนมัติ:** รุ่นใหม่ = ติดตั้งทับตัวเดิม (Windows: `AppId` เดิม จึงอัปเกรดทับได้ · macOS: ลากทับ)
+- **ไม่มีการอัปเดตอัตโนมัติในตัวแอป:** รุ่นใหม่ = ติดตั้งทับตัวเดิม (Windows: `AppId` เดิม จึงอัปเกรดทับได้ · macOS: `.pkg` แทนที่แอปเดิมให้)
+- **ตัวติดตั้งตามโค้ดล่าสุดอย่างไร:** workflow สร้างให้เองเมื่อไฟล์ที่ถูกแพ็กเปลี่ยน (`app/` ยกเว้น `test_vision.py`, `installer/`, `data`, `VERSION`) —
+  push เข้า `main` = ตัวติดตั้งทั้งสามตัวรุ่นล่าสุดอยู่ที่ Actions → run นั้น → Artifacts (เก็บ 90 วัน) · PR ที่แตะไฟล์พวกนี้ก็สร้างให้ดู ·
+  **แต่ Release (ที่แจกลูกค้า) สร้างเมื่อ push tag `app-v*` เท่านั้น** — เดิมแก้โค้ดแอปอย่างเดียวไม่เคยทำให้สร้างตัวติดตั้งใหม่เลย
 - **ตัวสร้างทดสอบ "ติดตั้งจริงแล้วรัน" ให้เอง** ทุกครั้ง (รวมถอนชื่อเดิมและติดตั้งซ้ำ ตรวจว่าไฟล์ค้างหาย): Windows ติดตั้งแบบเงียบเป็นภาษาไทย → รัน `--selftest` ของแอปที่ติดตั้ง → ถอนการติดตั้ง · macOS ติดตั้ง `.pkg` ด้วย `installer` → `codesign --verify` → ตรวจว่าไม่มีธง quarantine → รัน `--selftest` ของแอปที่ติดตั้ง
 - **MediaPipe บน macOS:** รุ่น 1.0.1 abort ทั้งโปรเซสตอนสร้างตัวตรวจมือ (เจอบน Mac จริง macOS 26.2 และบน CI) จึงใช้ 0.10.21 เฉพาะ macOS ดู `app/requirements.txt` — CI ตรวจตัวตรวจมือในตัวติดตั้งทุกครั้งและล้มถ้าไม่ผ่าน
 - **เครื่องเสมือน macOS ของ GitHub ไม่มี GPU:** selftest จึงใช้ CPU ส่วน MPS บน Mac จริงยังไม่ได้ตรวจ
