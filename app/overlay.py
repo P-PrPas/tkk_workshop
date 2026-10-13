@@ -1,4 +1,4 @@
-"""วาดผลลงบนเฟรม — สี ฟอนต์ กรอบแก้ว โครงมือ เส้นทาง และจอรอ
+"""วาดผลลงบนเฟรม — สี ฟอนต์ กรอบแก้ว โครงมือ เส้นทาง
 
 แยกออกมาจาก `vision.py` เพราะไฟล์นี้ **ไม่พึ่ง torch / ultralytics / mediapipe เลย**
 เปิดแอปดูหน้าตาบนเครื่องที่ไม่มีสแต็ก CV ก็ยังได้ (tools/ui_preview.py ใช้ทางนี้)
@@ -51,7 +51,9 @@ def font(px, bold=False):
     hit = _FONTS.get((px, bold))
     if hit is None:
         try:
-            hit = ImageFont.truetype(str(_BOLD if bold else _REG), px)
+            # BASIC: ข้อความบนเฟรมเป็นอังกฤษล้วน ไม่ต้องใช้ Raqm (ช้ากว่า 1.5 เท่า) · Inter ใน app/fonts ตัด hinting แล้ว
+            # (ตัว hinted เรนเดอร์ช้ากว่า ~4 เท่า — ป้ายต่อแก้ว 4 ใบกิน ~10ms/เฟรมในเธรดวิเคราะห์)
+            hit = ImageFont.truetype(str(_BOLD if bold else _REG), px, layout_engine=ImageFont.Layout.BASIC)
         except OSError:                          # ไม่มีไฟล์ฟอนต์ (เช่นลืมแพ็ก) — ใช้ตัวในตัวของ Pillow ดีกว่าแอปล้ม
             hit = ImageFont.load_default(px)
         _FONTS[(px, bold)] = hit
@@ -182,18 +184,3 @@ def draw(frame, cups, hands, held_ids, insp, debug, confidences=None, zone=None)
         _put(T, pts[0][0], pts[0][1] + px(18), msg, font(15 * u, True), col, "lm")
 
     return _flush(frame, T)
-
-
-def splash(msg, width=1280):
-    """จอรอ (เปิดกล้อง / ต่อกล้องใหม่ / โหลดโมเดล) — สปินเนอร์ + ชื่อสถานี"""
-    w = int(width)
-    h = w * 9 // 16
-    img = np.full((h, w, 3), 11, np.uint8)
-    cx, cy, r = w // 2, int(h * 0.45), max(16, h // 20)
-    a = time.time() * 90
-    cv2.ellipse(img, (cx, cy), (r, r), 0, 0, 360, (40, 34, 30), max(2, h // 300), cv2.LINE_AA)
-    cv2.ellipse(img, (cx, cy), (r, r), 0, a % 360, a % 360 + 90, OK, max(2, h // 240), cv2.LINE_AA)
-    T = []
-    _put(T, cx, cy + r + h // 12, "CUPTICK", font(h / 30, True), FG, "ma")
-    _put(T, cx, cy + r + h // 12 + h // 18, msg, font(h / 42), MUTED, "ma")
-    return _flush(img, T)

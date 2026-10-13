@@ -554,6 +554,33 @@ def test_camera_switch_never_serves_the_old_camera():
         cam.release()
 
 
+def test_open_camera_opens_the_configured_one_first():
+    """เปิดแอปเปิดกล้องที่ config ระบุทันที ไม่สำรวจทั้งชุดก่อน (Windows เปิดทีละตัวช้า) · รายการกล้องอื่นตามมาเบื้องหลัง
+    · กล้องที่ระบุเปิดไม่ได้ → ตกไปตัวแรกที่เปิดได้"""
+    opened = []
+
+    class FakeCap:
+        works = {0, 2}
+        def __init__(self, idx):
+            self.idx = idx
+            opened.append(idx)
+        def set(self, *a): pass
+        def isOpened(self): return self.idx in self.works
+        def read(self): return (True, np.zeros((4, 4, 3), np.uint8)) if self.idx in self.works else (False, None)
+        def release(self): pass
+
+    cfg = {"camera_index": 2, "camera_probe": 3, "mirror": False}
+    with patch("vision.cv2.VideoCapture", FakeCap), patch("builtins.print"):
+        cam = vision.open_camera(cfg)
+        assert cam.index == 2 and opened[0] == 2                # ตัวที่ระบุถูกเปิดก่อนใคร
+        time.sleep(0.3)
+        assert cam.available == [0, 2], cam.available           # 1 เปิดไม่ได้ · 0 มาทีหลังเบื้องหลัง
+        cam.release()
+        cam = vision.open_camera({**cfg, "camera_index": 1})    # ระบุตัวที่ไม่มี
+        assert cam.index == 0 and cam.available == [0, 2]
+        cam.release()
+
+
 # ─────────── ตัวติดตั้ง: พาธของแอปที่แพ็กแล้ว ───────────
 def test_installed_app_user_config_and_files():
     """แอปที่ติดตั้งแล้วแก้ค่าที่มากับแอปไม่ได้ — config / โมเดลสำรองของผู้ใช้อยู่ที่ user_dir() และทับของที่มากับแอป"""
@@ -639,6 +666,7 @@ if __name__ == "__main__":
     test_pick_device_skips_a_gpu_that_does_not_work()
     test_user_dir_per_platform()
     test_installed_app_user_config_and_files()
+    test_open_camera_opens_the_configured_one_first()
     test_camera_switch_never_serves_the_old_camera()
     test_resolve_model_path()
     test_zone_geometry()

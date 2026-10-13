@@ -17,21 +17,22 @@ import math
 import multiprocessing
 import os
 import sys
+import threading
 import time
 from pathlib import Path
 
 import cv2
 
 from zone import polygons_overlap
-from overlay import FONT_DIR, splash          # vision (torch/ultralytics) นำเข้าตอน main() เท่านั้น —
+from overlay import FONT_DIR          # vision (torch/ultralytics) นำเข้าตอน main() เท่านั้น —
                                     # เปิดดูหน้าตา/รัน tools/ui_preview.py บนเครื่องที่ไม่มีสแต็ก CV ได้
 
 try:
-    from PySide6.QtCore import Qt, QPoint, QRectF, QTimer, QVariantAnimation, QPointF
+    from PySide6.QtCore import QObject, Qt, QPoint, QRectF, QTimer, QVariantAnimation, QPointF, Signal
     from PySide6.QtGui import (QColor, QFont, QFontDatabase, QFontMetrics, QImage, QPainter,
                                QPalette, QPen, QPixmap, QPolygonF)
     from PySide6.QtWidgets import (QAbstractButton, QApplication, QDialog, QDoubleSpinBox, QLabel, QHBoxLayout,
-                                   QMenu, QMessageBox, QScrollArea, QSplashScreen, QVBoxLayout, QWidget)
+                                   QMenu, QMessageBox, QProgressBar, QScrollArea, QVBoxLayout, QWidget)
 except ImportError:
     raise SystemExit("\nไม่มี PySide6 — ติดตั้งก่อน:  pip install -r app/requirements.txt\n")
 
@@ -70,7 +71,8 @@ MONO_FAMILIES = ["JetBrains Mono", "Cascadia Mono", "SF Mono", "Consolas",
 def load_fonts():
     """ลงฟอนต์ที่แพ็กมากับแอปให้ Qt — เรียกครั้งเดียว (cache) ตอนสร้างฟอนต์ตัวแรก"""
     for f in sorted(FONT_DIR.glob("*.ttf")):
-        QFontDatabase.addApplicationFont(str(f))
+        if QFontDatabase.addApplicationFont(str(f)) < 0:
+            print("โหลดฟอนต์ไม่ได้:", f)          # ไฟล์เสีย → Qt เงียบแล้วตกไปฟอนต์เครื่อง หน้าตาเพี้ยนโดยไม่มีใครรู้
 
 
 def face(size, weight=QFont.Weight.Normal, mono=False):
@@ -133,6 +135,18 @@ def cup_mark(p, cx, cy, s, color):
         px = x0 + bw * frac
         p.drawPolyline(QPolygonF([QPointF(px + 0.035 * s * math.sin(t * 2 * math.pi + phase), y0 - 0.11 * s - t * 0.27 * s)
                                   for t in (i / 24 for i in range(25))]))
+
+
+def spinner(p, cx, cy, r):
+    """สปินเนอร์วาดด้วย QPainter — มุมคิดจากเวลาจริง ไม่นับเฟรม: ถ้าเธรดหลักสะดุดมันกระโดด ไม่ช้าลง"""
+    box = QRectF(cx - r, cy - r, 2 * r, 2 * r)
+    p.setBrush(Qt.BrushStyle.NoBrush)
+    p.setPen(pen(LINE, 3))
+    p.drawEllipse(box)
+    arc = pen(ACCENT_HI, 3)
+    arc.setCapStyle(Qt.PenCapStyle.RoundCap)
+    p.setPen(arc)
+    p.drawArc(box, int(-(time.time() * 330 % 360) * 16), 100 * 16)
 
 
 # ─────────────────────────── ปุ่ม ───────────────────────────
@@ -217,6 +231,7 @@ class Viewport(QWidget):
         self.raw = None                 # เฟรมล่าสุด (ยังไม่ย่อ) — ไว้ให้ปุ่ม S เซฟ
         self.st = {}
         self.beat = 0.0
+        self.busy = ""                  # ข้อความจอรอ ("กำลังเชื่อมต่อกล้อง…") — ไม่ว่าง = วาดสปินเนอร์แทนภาพ
         self.box = None                 # สี่เหลี่ยมของภาพบนวิดเจ็ต — ไว้แปลงตำแหน่งเมาส์ ↔ สัดส่วนเฟรม
         self.zones = {"A": None, "B": None}   # polygon สัดส่วน 0-1 (Station เป็นเจ้าของ ที่นี่แค่วาด)
         self.show_zones = False         # True เฉพาะโหมด zone — กลับโหมดตรวจแล้วกรอบต้องหายจากจอ (ค่ากรอบยังจำไว้ใช้ต่อ)
@@ -228,15 +243,28 @@ class Viewport(QWidget):
         self.setMinimumSize(480, 270)
 
     def set_frame(self, frame):
+        self.busy = ""
         self.raw = frame
         h, w = frame.shape[:2]
         s = min(self.width() / w, self.height() / h)
         small = cv2.resize(frame, (max(1, int(w * s)), max(1, int(h * s))),
-                           interpolation=cv2.INTER_AREA)
+                           interpolation=cv2.INTER_AREA if s < 0.7 else cv2.INTER_LINEAR)   # ย่อเล็กน้อย: LINEAR เร็วกว่า ~4 เท่า ภาพไม่ต่าง
         img = QImage(small.data, small.shape[1], small.shape[0], small.strides[0],
                      QImage.Format.Format_BGR888)
         self.pix = QPixmap.fromImage(img)            # fromImage คัดลอกพิกเซลให้แล้ว บัฟเฟอร์ numpy ทิ้งได้
         self.update()
+
+    def wait(self, msg):
+        """ไม่มีภาพให้โชว์ — ทิ้งภาพเก่า (กล้องใหม่ต้องไม่เห็นภาพค้างของกล้องก่อนหน้า) แล้วโชว์ข้อความรอ"""
+        self.busy, self.pix, self.raw, self.box = msg, None, None, None
+        self.update()
+
+    def pulse(self):
+        """เฟรมเดิม: วาดซ้ำเฉพาะมุมซ้ายบนที่จุด LIVE เต้นอยู่ ไม่ต้องวาดทั้งภาพ 50 ครั้ง/วินาที"""
+        if self.box is None:
+            self.update()
+        else:
+            self.update(int(self.box.left()), int(self.box.top()), 170, 60)
 
     def resizeEvent(self, e):
         if self.raw is not None:
@@ -246,6 +274,11 @@ class Viewport(QWidget):
         p = QPainter(self)
         p.setRenderHint(QPainter.RenderHint.Antialiasing)
         p.fillRect(self.rect(), QColor(BLACK))
+        if self.busy:
+            spinner(p, self.width() / 2, self.height() / 2 - 14, 22)
+            text(p, 0, self.height() / 2 + 28, self.busy, face(14, QFont.Weight.DemiBold), DIM,
+                 Qt.AlignmentFlag.AlignCenter, self.width())
+            return
         if self.pix is None:
             return
         x = (self.width() - self.pix.width()) // 2
@@ -711,8 +744,9 @@ class Station(QWidget):
         root.addWidget(self.foot)
 
         self.timer = QTimer(self)
+        self.timer.setTimerType(Qt.TimerType.PreciseTimer)     # ค่าปริยายปัดเป็น ~15ms บน Windows → 20ms กลายเป็น 31ms
         self.timer.timeout.connect(self.tick)
-        self.timer.start(20)
+        self.timer.start(16)
         self._sync_cam_btn()
 
     # ── ปุ่ม ──
@@ -893,15 +927,16 @@ class Station(QWidget):
                     spin.blockSignals(True)
                     spin.setValue(value)
                     spin.blockSignals(False)
-        if frame is None:
-            frame, seq = splash("starting model", int(self.cfg.get("window_width", 1280))), -2
         self.view.st = st
         self.view.beat = time.time()
-        if seq != self.seq:              # เฟรมเดิมไม่ต้องแปลงซ้ำ (แปลงภาพแพงกว่าที่คิด)
+        if frame is None:                # ยังไม่มีภาพ: กล้องหลุด/กำลังสลับ หรือรอเฟรมแรก — วาดจอรอ ไม่ใช่ภาพ
+            self.seq = -1
+            self.view.wait("กำลังเชื่อมต่อกล้อง…" if not st.get("camera", True) else "กำลังเริ่มวิเคราะห์ภาพ…")
+        elif seq != self.seq:            # เฟรมเดิมไม่ต้องแปลงซ้ำ (แปลงภาพแพงกว่าที่คิด)
             self.seq = seq
             self.view.set_frame(frame)
         else:
-            self.view.update()           # จุดสถานะยังต้องเต้นแม้เฟรมไม่มา
+            self.view.pulse()            # จุดสถานะยังต้องเต้นแม้เฟรมไม่มา
         self.rack.set_rows(st.get("rows", []), self.an.events, st.get("mode") == "zone")
         self.head.set(st)
         self.foot.set(st, self.msg, self.an.events)
@@ -1076,18 +1111,64 @@ def fatal(msg):
     box = QMessageBox(QMessageBox.Icon.Critical, "Cuptick", "เปิดแอปไม่สำเร็จ")
     box.setInformativeText(str(msg).strip())
     box.exec()
-    sys.exit(1)
 
 
-def boot_splash(app):
-    """หน้าต่างรอตอนโหลดโมเดล/กล้อง (หลายวินาที) — ไม่มีมัน ดับเบิลคลิกไอคอนแล้วไม่มีอะไรขึ้นเลย"""
-    img = splash("loading model and camera...", 720)
-    img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
-    qimg = QImage(img.data, img.shape[1], img.shape[0], img.strides[0], QImage.Format.Format_RGB888)
-    box = QSplashScreen(QPixmap.fromImage(qimg))
-    box.show()
-    app.processEvents()
-    return box
+class Boot(QWidget):
+    """หน้าต่างรอตอนเปิดแอป (โหลดไลบรารี โมเดล กล้อง ใช้เวลาหลายวินาที) — ตัวโหลดทำงานในเธรดอื่น
+    เธรดหลักจึงว่างพอวาดข้อความ + เวลาที่ผ่านไป · แถบวิ่งเป็น QProgressBar แบบไม่รู้ความคืบหน้า: Qt แอนิเมตมันใน C++
+    ไม่ต้องรอ Python — ตอน import torch ถือ GIL ค้างเป็นช่วง ๆ แถบก็ยังวิ่งต่อ ไม่ดูเหมือนแอปค้าง"""
+
+    def __init__(self):
+        super().__init__(None, Qt.WindowType.SplashScreen | Qt.WindowType.FramelessWindowHint)
+        self.msg, self.t0 = "กำลังเริ่มต้น", time.time()
+        self.setFixedSize(460, 280)
+        self.bar = QProgressBar(self)
+        self.bar.setRange(0, 0)
+        self.bar.setTextVisible(False)
+        self.bar.setGeometry(120, 178, 220, 4)
+        self.bar.setStyleSheet(f"QProgressBar {{background:{LINE}; border:0; border-radius:2px;}}"
+                               f"QProgressBar::chunk {{background:{ACCENT_HI}; border-radius:2px;}}")
+        self.timer = QTimer(self)
+        self.timer.timeout.connect(self.update)
+        self.timer.start(250)                  # แค่ให้ตัวเลขวินาทีเดิน
+
+    def paintEvent(self, e):
+        p = QPainter(self)
+        p.setRenderHint(QPainter.RenderHint.Antialiasing)
+        p.fillRect(self.rect(), QColor(PANEL))
+        p.setPen(pen(LINE))
+        p.setBrush(Qt.BrushStyle.NoBrush)
+        p.drawRect(QRectF(self.rect()).adjusted(0.5, 0.5, -0.5, -0.5))
+        w = self.width()
+        cup_mark(p, w / 2, 62, 44, ACCENT_HI)
+        text(p, 0, 112, "Cuptick", face(22, QFont.Weight.Bold), TXT, Qt.AlignmentFlag.AlignCenter, w)
+        text(p, 0, 198, self.msg, face(13, QFont.Weight.DemiBold), DIM, Qt.AlignmentFlag.AlignCenter, w)
+        s = int(time.time() - self.t0)
+        text(p, 0, 224, f"{s // 60:02d}:{s % 60:02d}", face(12, mono=True), FAINT, Qt.AlignmentFlag.AlignCenter, w)
+
+
+class Loader(QObject):
+    """โหลดของหนักในเธรดแยก แล้วส่งผลกลับเธรดหลักผ่าน signal — สร้างวิดเจ็ตต้องทำที่เธรดหลักเท่านั้น"""
+    step = Signal(str)
+    ready = Signal(object, object, object)       # cfg, analyzer, cam
+    failed = Signal(object)                      # ข้อความที่จะโชว์ผู้ใช้
+
+    def run(self):
+        threading.Thread(target=self._load, daemon=True).start()
+
+    def _load(self):
+        try:
+            self.step.emit("กำลังโหลดไลบรารี AI")
+            import vision                          # torch/ultralytics/mediapipe — เป็นส่วนที่ช้าที่สุดของการเปิดแอป
+
+            cfg = vision.load_config()
+            analyzer, cam = vision.start(cfg, self.step.emit)
+            self.ready.emit(cfg, analyzer, cam)
+        except SystemExit as e:                    # vision.start() ออกด้วยข้อความไทยที่บอกว่าต้องแก้อะไร
+            self.failed.emit(e.code if isinstance(e.code, str) else "ออกจากโปรแกรม")
+        except Exception:
+            import traceback
+            self.failed.emit(traceback.format_exc())
 
 
 def selftest_hands(out):
@@ -1161,27 +1242,37 @@ def main():
 
     app = QApplication(sys.argv)
     app.setApplicationName("Cuptick")
-    boot = boot_splash(app)
-    try:
-        import vision
+    boot = Boot()
+    boot.show()
+    loaded = {}                                # เก็บไว้ปิดตอนออก — analyzer/cam สร้างในเธรดตัวโหลด
 
-        cfg = vision.load_config()
-        analyzer, cam = vision.start(cfg)
-    except SystemExit as e:                    # vision.start() ออกด้วยข้อความไทยที่บอกว่าต้องแก้อะไร
+    def on_ready(cfg, analyzer, cam):
+        loaded.update(analyzer=analyzer, cam=cam)
+        try:
+            loaded["win"] = win = Station(analyzer, cfg)
+            win.show()
+        except Exception:                      # ไม่ดักไว้ = หน้าต่างรอค้างอยู่ตลอดไป ไม่มีใครรู้ว่าเกิดอะไร
+            import traceback
+            on_failed(traceback.format_exc())
+            return
         boot.close()
-        fatal(e.code if isinstance(e.code, str) else "ออกจากโปรแกรม")
-    except Exception:
-        import traceback
-        boot.close()
-        fatal(traceback.format_exc())
 
-    win = Station(analyzer, cfg)
-    win.show()
-    boot.finish(win)
-    app.exec()
+    def on_failed(msg):
+        boot.hide()                            # hide ไม่ใช่ close: close = หน้าต่างสุดท้ายปิด → Qt ออกจากแอปก่อนกล่องข้อความขึ้น
+        fatal(msg)
+        app.exit(1)
 
-    analyzer.release()
-    cam.release()
+    loader = Loader()
+    loader.step.connect(lambda s: setattr(boot, "msg", s))
+    loader.ready.connect(on_ready)
+    loader.failed.connect(on_failed)
+    QTimer.singleShot(0, loader.run)           # เริ่มหลังวนอีเวนต์รอบแรก — หน้าต่างรอขึ้นจอก่อนเสมอ
+    code = app.exec()
+
+    if loaded:
+        loaded["analyzer"].release()
+        loaded["cam"].release()
+    sys.exit(code)
 
 
 if __name__ == "__main__":

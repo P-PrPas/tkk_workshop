@@ -113,7 +113,7 @@ class FakeAnalyzer:
                              for t, ok, *_ in self.rows if ok][:3])
 
     def latest(self):
-        return 1, self.frame.copy(), {
+        return 1, None if self.state == "lost" else self.frame, {
             "holding": self.camera, "held_s": 3.4, "fps": 28.6, "hands": 1,
             "camera": self.camera, "device": "CUDA", "rows": self.rows, "round_s": 252,
             "mode": "zone" if self.state in ("zone", "draw") else "inspect",
@@ -145,8 +145,6 @@ def main():
     state = "zone" if check else state
     out = Path(sys.argv[2]) if len(sys.argv) > 2 else ROOT / "docs" / "app-ui.png"
     frame, insp = fake_frame()
-    if state == "lost":
-        frame = overlay.splash("reconnecting camera")
     if state in ("zone", "draw"):                        # โหมด zone: สีกรอบตามสถานะ (ไม่มีแถบเติม/เส้นทาง)
         frame, _ = fake_frame_zone()
     qt = QApplication(sys.argv[:1])
@@ -163,6 +161,8 @@ def main():
     win.tick()
     qt.processEvents()
     if check:
+        for f in sorted(ui.FONT_DIR.glob("*.ttf")):      # ไฟล์ฟอนต์ที่ commit มาต้องเป็นฟอนต์จริง (เคยเป็นหน้า HTML ของ GitHub)
+            assert ui.QFontDatabase.addApplicationFont(str(f)) >= 0, f"โหลดฟอนต์ไม่ได้: {f}"
         win.toggle_mode()                                # zone → inspect
         qt.processEvents()
         with_zones = win.view.grab().toImage()

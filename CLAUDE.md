@@ -46,6 +46,9 @@ tkk_workshop/            ← repo นี้
     (โหมด zone เพิ่มม่วง `#A78BFA` = "อยู่ที่ A" อีกสีเดียว — `app.VIOLET` ↔ `overlay.READY`)
     น้ำเงิน (`app.ACCENT`/`ACCENT_HI`) ใช้กับส่วนควบคุมเท่านั้น (ปุ่มหลัก แท็บ วงโฟกัส) ห้ามใช้บอกสถานะชิ้นงาน
 
+11. **เธรดหลักของแอปห้ามทำงานหนัก/รอ I/O** — ของหนักเข้า `Loader` / `vision.start()` (เธรดแยก) · จอรอวาดด้วย QPainter
+    ที่เธรดหลัก ไม่ใช่เฟรมที่เธรดอื่นสร้าง · ไฟล์ใน `app/fonts` ต้องเป็นฟอนต์จริง (`ui_preview.py check` เช็กให้) และ Inter ตัด hinting แล้ว (PIL เรนเดอร์เร็วขึ้น ~4 เท่า)
+
 ## ข้อเท็จจริงที่ตรวจสอบแล้ว อย่าเสียเวลาตรวจซ้ำ
 - Ultralytics **ไม่มี** hand-pose checkpoint สำเร็จรูป มีแต่ body pose 17 จุด
   และ dataset `hand-keypoints.yaml` ไว้ fine-tune เอง → ใช้ MediaPipe

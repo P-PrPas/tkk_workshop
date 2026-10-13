@@ -36,6 +36,7 @@ if FROZEN:
 
 import cv2
 import mediapipe as mp
+import numpy as np
 import torch
 import yaml
 from mediapipe.tasks import python as mp_python
@@ -43,7 +44,7 @@ from mediapipe.tasks.python import vision as mp_vision
 from ultralytics import YOLO
 from ultralytics.trackers.byte_tracker import BYTETracker
 
-from overlay import draw, splash
+from overlay import draw
 from userdir import user_dir
 from zone import ZoneTracker
 
@@ -463,8 +464,8 @@ class Analyzer:
                 ok, frame = self.cam.read()
                 if not ok or frame is None:
                     self.insp.pause()
-                    with self.lock:
-                        self.frame, self.seq = splash("reconnecting camera"), self.seq + 1
+                    with self.lock:                  # ไม่มีเฟรม = GUI วาดจอรอ (สปินเนอร์) เอง
+                        self.frame, self.seq = None, self.seq + 1
                         self.status = dict(self.status, camera=False)
                     time.sleep(0.1)
                     continue
@@ -546,10 +547,10 @@ class Analyzer:
                 time.sleep(0.2)
 
     def latest(self):
-        """(เลขเฟรม, เฟรม, สถานะ) — GUI เทียบเลขเฟรมก่อน ไม่ต้องแปลงภาพเดิมซ้ำ"""
+        """(เลขเฟรม, เฟรม, สถานะ) — GUI เทียบเลขเฟรมก่อน ไม่ต้องแปลงภาพเดิมซ้ำ
+        เฟรมที่คืนไม่ถูกคัดลอก: _loop สร้างอาร์เรย์ใหม่ทุกรอบและไม่แตะมันอีกหลังเผยแพร่ — ผู้เรียกห้ามแก้"""
         with self.lock:
-            frame = None if self.frame is None else self.frame.copy()
-            return self.seq, frame, dict(self.status, hand_conf={
+            return self.seq, self.frame, dict(self.status, hand_conf={
                 k: self.cfg.get(k, v) for k, v in HAND_CONF_DEFAULTS.items()
             })
 
@@ -563,16 +564,16 @@ class Analyzer:
 
 
 # ─────────────────────────── setup ───────────────────────────
+def camera_works(i):
+    cap = cv2.VideoCapture(i)
+    ok = cap.isOpened() and cap.read()[0]
+    cap.release()
+    return ok
+
+
 def list_cameras(probe=3):
-    """ลองเปิด index 0..probe-1 คืนเฉพาะตัวที่อ่านเฟรมได้ — ช้า ~1 วิ/ตัวบน Windows ทำครั้งเดียวตอนเปิดแอป"""
-    found = []
-    for i in range(max(1, int(probe))):
-        cap = cv2.VideoCapture(i)
-        ok = cap.isOpened() and cap.read()[0]
-        cap.release()
-        if ok:
-            found.append(i)
-    return found or [0]
+    """ลองเปิด index 0..probe-1 คืนเฉพาะตัวที่อ่านเฟรมได้ — ช้า ~1 วิ/ตัวบน Windows"""
+    return [i for i in range(max(1, int(probe))) if camera_works(i)] or [0]
 
 
 # ultralytics สร้างโฟลเดอร์ผลลัพธ์ทุกครั้งที่ predict (แม้ไม่บันทึกอะไร) โดยอิงไดเรกทอรีทำงาน — แอปที่เปิดจาก Finder
@@ -706,21 +707,19 @@ def load_hand_landmarker(cfg=None):
     return mp_vision.HandLandmarker.create_from_options(opts)
 
 
-def start(cfg):
-    """โหลดโมเดล เปิดกล้อง แล้วคืน (analyzer, camera) ที่พร้อมทำงาน
-    เปิดกล้องไม่ได้ใน 10 วินาที = ออกพร้อมข้อความไทยที่บอกว่าต้องไปแก้อะไร ไม่ใช่ traceback"""
-    if sys.version_info[:2] not in ((3, 11), (3, 12), (3, 13)):
-        v = f"{sys.version_info.major}.{sys.version_info.minor}"
-        print(f"เตือน: Python {v} ยังไม่ทดสอบ — สแต็กนี้ใช้ 3.12/3.13 (mediapipe/torch อาจพัง)")
-        print(f"       venv ใหม่:  py -3.12 -m venv .venv  &&  .venv\\Scripts\\activate\n")
-    cfg["model_path"] = resolve_model_path(cfg)
-    model = load_model(cfg)
-    hands = load_hand_landmarker(cfg)
-    cams = list_cameras(cfg.get("camera_probe", 3))          # ทำรายการก่อนเปิดตัวจริง (สองตัวพร้อมกันไม่ได้)
-    idx = cfg["camera_index"] if cfg["camera_index"] in cams else cams[0]
-    print("กล้องที่เปิดได้:", cams, "→ ใช้", idx)
-    cam = Camera(idx, mirror=cfg.get("mirror", True), available=cams,
-                 width=cfg.get("camera_width"), height=cfg.get("camera_height"))
+def open_camera(cfg):
+    """เปิดกล้องที่ config ระบุก่อน (ไม่สำรวจทั้งชุดก่อน — Windows เปิดทีละตัวช้าเป็นวินาที) แล้วรอเฟรมแรก
+    เปิดไม่ได้เลย → ค่อยสำรวจหาตัวที่เปิดได้ · รายการกล้องอื่น (ให้ปุ่มเลือกกล้อง) สำรวจต่อเบื้องหลังหลังภาพขึ้นแล้ว
+    ไม่ได้เฟรมใน 10 วินาที = ออกพร้อมข้อความไทยที่บอกว่าต้องไปแก้อะไร ไม่ใช่ traceback"""
+    idx, probe = cfg["camera_index"], int(cfg.get("camera_probe", 3))
+    opts = dict(mirror=cfg.get("mirror", True), width=cfg.get("camera_width"), height=cfg.get("camera_height"))
+    cam = Camera(idx, available=[idx], **opts)
+    if not cam.cap.isOpened():
+        cam.release()
+        cams = list_cameras(probe)
+        idx = cams[0]
+        print("กล้องที่เปิดได้:", cams, "→ ใช้", idx)
+        cam = Camera(idx, available=cams, **opts)
 
     print("กำลังเปิดกล้อง...")
     t0 = time.time()
@@ -735,4 +734,50 @@ def start(cfg):
                 "macOS: ตั้งค่าระบบ → ความเป็นส่วนตัวและความปลอดภัย → กล้อง → เปิดให้ Cuptick\n"
                 "Windows: การตั้งค่า → ความเป็นส่วนตัว → กล้อง → อนุญาตแอปเดสก์ท็อป\n"
             )
+
+    def probe_others():                        # ponytail: สำรวจครั้งเดียวตอนเปิดแอป — เสียบกล้องเพิ่มทีหลังต้องเปิดแอปใหม่
+        found = [i for i in range(probe) if i != cam.index and camera_works(i)]
+        cam.available = sorted(set(cam.available) | set(found))
+    threading.Thread(target=probe_others, daemon=True).start()
+    return cam
+
+
+def warm_up(cfg, model, hands, device):
+    """รันโมเดลหนึ่งรอบด้วยภาพดำ — รอบแรกของ CUDA/ONNX/MediaPipe ช้าหลายวินาที (ตั้งเคอร์เนล/จัดสรรหน่วยความจำ)
+    ทำที่นี่ขณะหน้าจอรอยังหมุนอยู่ ไม่ใช่หลังเปิดหน้าต่างหลักแล้วภาพค้าง"""
+    frame = np.zeros((int(cfg.get("camera_height") or 720), int(cfg.get("camera_width") or 1280), 3), np.uint8)
+    model.predict(frame, imgsz=cfg.get("imgsz", 480), device=device, classes=[cfg["cup_class"]],
+                  verbose=False, **PREDICT_ARGS)
+    hands.detect_for_video(mp.Image(image_format=mp.ImageFormat.SRGB, data=frame), int(time.monotonic() * 1000))
+
+
+def start(cfg, step=lambda msg: None):
+    """โหลดโมเดล เปิดกล้อง แล้วคืน (analyzer, camera) ที่พร้อมทำงาน
+    กล้องเปิดขนานกับการโหลดโมเดล (สองอย่างนี้ช้าพอ ๆ กัน) · step(ข้อความ) บอกความคืบหน้าให้หน้าจอรอ"""
+    if sys.version_info[:2] not in ((3, 11), (3, 12), (3, 13)):
+        v = f"{sys.version_info.major}.{sys.version_info.minor}"
+        print(f"เตือน: Python {v} ยังไม่ทดสอบ — สแต็กนี้ใช้ 3.12/3.13 (mediapipe/torch อาจพัง)")
+        print(f"       venv ใหม่:  py -3.12 -m venv .venv  &&  .venv\\Scripts\\activate\n")
+    cam_job = {}
+
+    def open_cam():
+        try:
+            cam_job["cam"] = open_camera(cfg)
+        except BaseException as e:             # SystemExit ข้อความไทยต้องไปโผล่ที่เธรดหลักของตัวโหลด
+            cam_job["err"] = e
+    cam_thread = threading.Thread(target=open_cam, daemon=True)
+    cam_thread.start()
+
+    step("กำลังโหลดโมเดลตรวจจับแก้ว")
+    cfg["model_path"] = resolve_model_path(cfg)
+    model = load_model(cfg)
+    step("กำลังโหลดโมเดลตรวจจับมือ")
+    hands = load_hand_landmarker(cfg)
+    step("กำลังอุ่นเครื่องโมเดล")
+    warm_up(cfg, model, hands, pick_device(cfg))
+    step("กำลังรอภาพจากกล้อง")
+    cam_thread.join()
+    if "err" in cam_job:
+        raise cam_job["err"]
+    cam = cam_job["cam"]
     return Analyzer(cam, model, hands, cfg), cam
