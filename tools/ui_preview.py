@@ -7,6 +7,7 @@
     python tools/ui_preview.py empty out.png      # สถานะอื่น: empty · done · many · lost
     python tools/ui_preview.py zone out.png       # โหมด zone A → B (ครบสี่สถานะ) · draw = กำลังวาดกรอบ B
     python tools/ui_preview.py settings out.png   # หน้าต่างตั้งค่า (threshold) เปิดอยู่เหนือภาพ
+    python tools/ui_preview.py check              # ไม่เรนเดอร์ไฟล์: เช็กว่ากลับโหมดตรวจแล้วกรอบ A/B หายจากภาพ
 """
 import sys
 import time
@@ -140,6 +141,8 @@ class FakeAnalyzer:
 
 def main():
     state = sys.argv[1] if len(sys.argv) > 1 else "live"
+    check = state == "check"
+    state = "zone" if check else state
     out = Path(sys.argv[2]) if len(sys.argv) > 2 else ROOT / "docs" / "app-ui.png"
     frame, insp = fake_frame()
     if state == "lost":
@@ -159,6 +162,14 @@ def main():
     qt.processEvents()
     win.tick()
     qt.processEvents()
+    if check:
+        win.toggle_mode()                                # zone → inspect
+        qt.processEvents()
+        with_zones = win.view.grab().toImage()
+        win.view.zones = {"A": None, "B": None}
+        assert with_zones == win.view.grab().toImage(), "กรอบ A/B ยังค้างอยู่บนภาพหลังกลับโหมดตรวจ"
+        print("ok")
+        return
     shot = win.grab()
     if state == "settings":                              # หน้าต่างตั้งค่าเป็นหน้าต่างแยก — grab แล้ววางทับตำแหน่งจริง
         win.toggle_settings()

@@ -4,8 +4,9 @@
 เปิดแอปดูหน้าตาบนเครื่องที่ไม่มีสแต็ก CV ก็ยังได้ (tools/ui_preview.py ใช้ทางนี้)
 
 เส้นแบ่ง: อะไรที่ต้องอยู่ *ตรงตำแหน่งบนภาพ* วาดที่นี่ · อะไรที่เป็นข้อความ/รายการ/ปุ่ม
-เป็นวิดเจ็ต Qt ใน app.py (และพิมพ์ไทยได้ ต่างจากบนเฟรมที่ DejaVu ไม่มี glyph ไทย)
+เป็นวิดเจ็ต Qt ใน app.py (และพิมพ์ไทยได้ ต่างจากบนเฟรมที่ Inter ไม่มี glyph ไทย)
 """
+import sys
 import time
 from pathlib import Path
 
@@ -13,7 +14,7 @@ import cv2
 import numpy as np
 from PIL import Image, ImageDraw, ImageFont
 
-# ทุกข้อความบนจอเป็นภาษาอังกฤษ — DejaVu ไม่มี glyph ไทย (ไทยไปที่วิดเจ็ต Qt)
+# ทุกข้อความบนจอเป็นภาษาอังกฤษ — Inter ไม่มี glyph ไทย (ไทยไปที่วิดเจ็ต Qt)
 # สีชุดเดียวกับ UI ใน app.py — ภาพกับแผงข้างต้องดูเป็นเครื่องเดียวกัน (BGR)
 INK   = (27, 20, 16)      # พื้นแผงโปร่งแสง        #10141B
 FG    = (243, 236, 231)   # อักษรหลัก              #E7ECF3
@@ -40,12 +41,8 @@ HAND_EDGES = [(0, 1), (1, 2), (2, 3), (3, 4), (0, 5), (5, 6), (6, 7), (7, 8),
               (5, 9), (9, 10), (10, 11), (11, 12), (9, 13), (13, 14), (14, 15),
               (15, 16), (13, 17), (17, 18), (18, 19), (19, 20), (0, 17)]
 
-try:                        # DejaVu มากับ matplotlib (dep ของ ultralytics อยู่แล้ว)
-    import matplotlib
-    _FDIR = Path(matplotlib.get_data_path()) / "fonts" / "ttf"
-    _REG, _BOLD = _FDIR / "DejaVuSans.ttf", _FDIR / "DejaVuSans-Bold.ttf"
-except Exception:
-    _REG = _BOLD = None
+FONT_DIR = Path(getattr(sys, "_MEIPASS", Path(__file__).parent)) / "fonts"   # Inter ที่มากับแอป — ตัวเดียวกับ UI ใน app.py
+_REG, _BOLD = FONT_DIR / "Inter-Regular.ttf", FONT_DIR / "Inter-Bold.ttf"
 _FONTS = {}
 
 
@@ -53,14 +50,10 @@ def font(px, bold=False):
     px = max(9, int(px))
     hit = _FONTS.get((px, bold))
     if hit is None:
-        for cand in ((_BOLD if bold else _REG),
-                     ("DejaVuSans-Bold.ttf" if bold else "DejaVuSans.ttf")):
-            try:
-                hit = ImageFont.truetype(str(cand), px)
-                break
-            except (OSError, TypeError):
-                hit = None
-        hit = hit or ImageFont.load_default(px)
+        try:
+            hit = ImageFont.truetype(str(_BOLD if bold else _REG), px)
+        except OSError:                          # ไม่มีไฟล์ฟอนต์ (เช่นลืมแพ็ก) — ใช้ตัวในตัวของ Pillow ดีกว่าแอปล้ม
+            hit = ImageFont.load_default(px)
         _FONTS[(px, bold)] = hit
     return hit
 

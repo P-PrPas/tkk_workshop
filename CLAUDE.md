@@ -22,6 +22,7 @@ tkk_workshop/            ← repo นี้
 ├── docs/                ← 00 ภาพรวม, 01 สเปกโน้ตบุ๊ก, 02 ข้อมูล, 03 โมเดล, 04 แอป
 ├── notebooks/cv101.ipynb
 ├── app/{vision.py,zone.py,overlay.py,app.py,config.yaml}   ← คิด / สถานะโหมด zone / วาดลงเฟรม / แสดงผล
+│   └── fonts/       ← Inter · Noto Sans Thai · JetBrains Mono (OFL) แพ็กกับแอป — เพิ่มฟอนต์ใหม่ต้องเพิ่มไลเซนส์ด้วย
 ├── installer/           ← ตัวติดตั้ง Windows (.exe) / macOS (.pkg) — อ่าน docs/05-installer.md
 ├── tools/{build_bigdata.py,ui_preview.py}
 └── data/                ← submodule → github.com/P-PrPas/tkk_workshop-data
@@ -43,6 +44,7 @@ tkk_workshop/            ← repo นี้
 10. **สีที่เป็นสัญญาณมีสองสี** เขียว `#3DD68C` (ตรวจแล้ว) · อำพัน `#F2B34B` (ยังไม่ตรวจ)
     ชุดเดียวกันอยู่ทั้งใน `app.py` (hex) และ `overlay.py` (BGR) — แก้ต้องแก้คู่กัน
     (โหมด zone เพิ่มม่วง `#A78BFA` = "อยู่ที่ A" อีกสีเดียว — `app.VIOLET` ↔ `overlay.READY`)
+    น้ำเงิน (`app.ACCENT`/`ACCENT_HI`) ใช้กับส่วนควบคุมเท่านั้น (ปุ่มหลัก แท็บ วงโฟกัส) ห้ามใช้บอกสถานะชิ้นงาน
 
 ## ข้อเท็จจริงที่ตรวจสอบแล้ว อย่าเสียเวลาตรวจซ้ำ
 - Ultralytics **ไม่มี** hand-pose checkpoint สำเร็จรูป มีแต่ body pose 17 จุด
@@ -54,7 +56,7 @@ tkk_workshop/            ← repo นี้
   ไป `pip install` เองกลางเดโม · แอปมี `lap` ใน requirements แล้ว
 - UI ของแอปเป็น **PySide6 (Qt)** — `PySide6-Essentials==6.10.*` รองรับ Python 3.9–3.14
   ข้อความบนวิดเจ็ตเป็นไทยได้ (font fallback รายตัวอักษร) แต่ข้อความที่วาดลงบนเฟรม
-  (PIL/DejaVu) ยังต้องเป็นอังกฤษ · **ห้ามใช้ QSS `background:` บน widget แม่** — มันไหลลง
+  (PIL/Inter) ยังต้องเป็นอังกฤษ · **ห้ามใช้ QSS `background:` บน widget แม่** — มันไหลลง
   ลูกทุกตัว ใช้ `ground()` (QPalette) แทน
 - เครื่องพัฒนามี Tesla V100 32GB แต่ **ไม่มีกล้อง** — ทดสอบ realtime บนเครื่องนี้ไม่ได้
 
@@ -62,7 +64,7 @@ tkk_workshop/            ← repo นี้
 ```bash
 python tools/build_bigdata.py                # ดึง COCO cup มาเตรียมเทรนโมเดลดี
 python app/app.py                            # รันแอป (ต้องมีกล้อง)
-python tools/ui_preview.py                   # เรนเดอร์หน้าจอเป็น docs/app-ui.png (ไม่ต้องมีกล้อง)
+python tools/ui_preview.py                   # เรนเดอร์หน้าจอเป็น docs/app-ui.png (ไม่ต้องมีกล้อง) · `check` = เช็กว่ากรอบ zone หายเมื่อกลับโหมดตรวจ
 python app/test_vision.py                    # self-check ตรรกะ
 python installer/build.py                    # สร้างตัวติดตั้งของระบบที่รันอยู่ (ปกติให้ GitHub Actions สร้าง)
 git clone --recursive <code repo>            # ฝั่งนักพัฒนา ต้องมี --recursive

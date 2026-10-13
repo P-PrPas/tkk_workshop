@@ -3,14 +3,16 @@
 ไฟล์นี้ *แสดงผลอย่างเดียว* ทุก 20ms หยิบ (เลขเฟรม, เฟรม, สถานะ) จาก `vision.Analyzer`
 มาวาด — ไม่มีการตัดสินใจเรื่อง CV อยู่ในนี้เลย ตรรกะทั้งหมดอยู่ที่ `app/vision.py`
 
-ภาษาการออกแบบ: **แผงเครื่องมือ ไม่ใช่หน้าเว็บ**
-  · ตัวเลขทุกตัวเป็นฟอนต์ monospace ความกว้างเท่ากัน — อ่านข้ามห้องแล้วไม่เต้น
-  · เส้นทุกเส้นหนา 1px และมีขีดสเกลเหมือนขอบเครื่องวัด
-  · มุมกรอบภาพเป็นวงเล็บมุม — ภาษาเดียวกับกรอบแก้วที่ vision.draw() วาด จอเดียวกันจริง ๆ
-  · สีเดียวที่เป็นสัญญาณคือเขียว (ตรวจแล้ว) กับอำพัน (ยังไม่ตรวจ) ที่เหลือเป็นเทา
+ภาษาการออกแบบ: **แพลตฟอร์มเครื่องมือ CV ระดับงานจริง** (อ้างอิงระบบดีไซน์ของ Intel Geti)
+  · พื้นเทากลางไร้โทนสี แผงแบนมุม 4px เส้นขอบ 1px — ไม่มีเงา ไม่มีลวดลายตกแต่ง
+  · น้ำเงิน (Intel blue) = ส่วนควบคุมเท่านั้น: ปุ่มหลัก · แท็บที่เลือก · วงโฟกัส
+  · ตัวเลขทุกตัวเป็นฟอนต์ mono ความกว้างเท่ากัน — อ่านข้ามห้องแล้วไม่เต้น
+  · สีที่เป็นสัญญาณคือเขียว (ตรวจแล้ว) กับอำพัน (ยังไม่ตรวจ) ที่เหลือเป็นเทา
+  · ฟอนต์ Inter + Noto Sans Thai + JetBrains Mono แพ็กมากับแอป (app/fonts) — หน้าตาเหมือนกันทุกเครื่อง
 
 รัน:  python app/app.py        ค่าที่ต้องจูนหน้างานอยู่ใน app/config.yaml ทั้งหมด
 """
+import functools
 import math
 import multiprocessing
 import os
@@ -21,12 +23,12 @@ from pathlib import Path
 import cv2
 
 from zone import polygons_overlap
-from overlay import splash          # vision (torch/ultralytics) นำเข้าตอน main() เท่านั้น —
+from overlay import FONT_DIR, splash          # vision (torch/ultralytics) นำเข้าตอน main() เท่านั้น —
                                     # เปิดดูหน้าตา/รัน tools/ui_preview.py บนเครื่องที่ไม่มีสแต็ก CV ได้
 
 try:
     from PySide6.QtCore import Qt, QPoint, QRectF, QTimer, QVariantAnimation, QPointF
-    from PySide6.QtGui import (QColor, QFont, QFontMetrics, QImage, QPainter,
+    from PySide6.QtGui import (QColor, QFont, QFontDatabase, QFontMetrics, QImage, QPainter,
                                QPalette, QPen, QPixmap, QPolygonF)
     from PySide6.QtWidgets import (QAbstractButton, QApplication, QDialog, QDoubleSpinBox, QLabel, QHBoxLayout,
                                    QMenu, QMessageBox, QScrollArea, QSplashScreen, QVBoxLayout, QWidget)
@@ -36,40 +38,48 @@ except ImportError:
 
 # ─────────────────────────── ธีม ───────────────────────────
 # ห้องเดโมปิดไฟ ฉายโปรเจกเตอร์ — พื้นยิ่งเข้ม ตัวอักษรยิ่งสว่าง อ่านจากท้ายห้องได้
-# สองสีสัญญาณ (SIGNAL/AMBER) ล็อกไว้ ต้องตรงกับ vision.py (ที่นั่นเป็น BGR) — แก้ต้องแก้คู่กัน
-GROUND = "#080B10"   # พื้นหน้าต่าง
-PANEL  = "#0E121A"   # แผงข้าง / แถบสถานะ
-CARD   = "#1B2330"   # แถวเช็กลิสต์ (สว่างกว่าแผงชัด ๆ ให้แถวลอยออกมา)
-LINE   = "#303B4C"   # เส้นแบ่ง 1px / ขอบ
-TXT    = "#F4F7FC"   # อักษรหลัก
-HEAD   = "#C7D0DE"   # ป้ายหัวข้อของแต่ละแผง — สว่างพออ่านข้ามห้อง
-DIM    = "#A7B3C6"   # อักษรรอง
-FAINT  = "#8C99AE"   # ป้ายกำกับจาง (timestamp, hint) — ยังผ่าน 4.5:1 บนพื้น PANEL
+# สองสีสัญญาณ (SIGNAL/AMBER) ล็อกไว้ ต้องตรงกับ overlay.py (ที่นั่นเป็น BGR) — แก้ต้องแก้คู่กัน
+GROUND = "#0B0B0C"   # พื้นหน้าต่าง
+PANEL  = "#1A1A1C"   # หัวแถบ / แผงข้าง / แถบสถานะ
+CARD   = "#252528"   # แถวเช็กลิสต์ ช่องกรอก (สว่างกว่าแผงให้แถวลอยออกมา)
+HOVER  = "#303034"   # ปุ่ม/แท็บตอนเมาส์อยู่
+LINE   = "#3A3A40"   # เส้นแบ่ง 1px / ขอบ
+TXT    = "#F3F3F5"   # อักษรหลัก
+HEAD   = "#D8D8DC"   # ป้ายหัวข้อของแต่ละแผง
+DIM    = "#ABABB3"   # อักษรรอง
+FAINT  = "#8D8D96"   # ป้ายกำกับจาง (timestamp, hint) — ผ่าน 4.5:1 บนพื้น PANEL
+ACCENT = "#0068B5"   # ส่วนควบคุม: ปุ่มหลัก (อักษรขาวบนสีนี้ 5.8:1)
+ACCENT_HI = "#00C7FD"   # ส่วนควบคุม: วงโฟกัส · ขีดใต้แท็บ · ข้อความแจ้งผลการกด
 SIGNAL = "#3DD68C"   # ตรวจแล้ว / กำลังหยิบ            (ล็อก — ตรงกับ overlay.OK)
 AMBER  = "#F2B34B"   # ยังไม่ตรวจ / กล้องหลุด          (ล็อก — ตรงกับ overlay.WARN)
 VIOLET = "#A78BFA"   # โหมด zone: อยู่ที่ A / polygon A        (ล็อก — ตรงกับ overlay.READY)
-BLACK  = "#04060A"   # พื้นหลังกรอบภาพ
+BLACK  = "#000000"   # พื้นหลังกรอบภาพ
+R = 4                # มุมมนของทุกกรอบ — Geti ใช้มุมเล็ก ไม่ใช่ปุ่มแคปซูล
 
 # โหมด zone: สีและชื่อสถานะของแก้ว (เทา → ม่วง → อำพัน → เขียว) — ตรงกับ overlay.ZONE_COLOR
 ZONE_HEX = {"idle": "#7A8496", "at_a": VIOLET, "transit": AMBER, "done": SIGNAL}
 ZONE_NAME = {"idle": "IDLE", "at_a": "AT A", "transit": "IN TRANSIT", "done": "DONE"}
 
-# Inter ไม่มี glyph ไทย — ไล่ family ให้ Qt เลือกรายตัวอักษร (ไทยตกไปที่ Segoe UI / Noto)
-UI_FAMILIES = ["Inter", "Segoe UI", "Helvetica Neue", "Noto Sans Thai", "Tahoma", "sans-serif"]
+# Inter ไม่มี glyph ไทย — ไล่ family ให้ Qt เลือกรายตัวอักษร (ไทยตกไปที่ Noto Sans Thai)
+UI_FAMILIES = ["Inter", "Noto Sans Thai", "Segoe UI", "Helvetica Neue", "Tahoma", "sans-serif"]
 MONO_FAMILIES = ["JetBrains Mono", "Cascadia Mono", "SF Mono", "Consolas",
                  "DejaVu Sans Mono", "monospace"]
 
 
-def face(size, weight=QFont.Weight.Normal, mono=False, track=0.0, caps=False):
-    """ฟอนต์หนึ่งตัว — mono สำหรับ *ตัวเลขทุกตัว* · track = ระยะห่างตัวอักษร (ใช้กับป้ายตัวพิมพ์ใหญ่)"""
+@functools.cache
+def load_fonts():
+    """ลงฟอนต์ที่แพ็กมากับแอปให้ Qt — เรียกครั้งเดียว (cache) ตอนสร้างฟอนต์ตัวแรก"""
+    for f in sorted(FONT_DIR.glob("*.ttf")):
+        QFontDatabase.addApplicationFont(str(f))
+
+
+def face(size, weight=QFont.Weight.Normal, mono=False):
+    """ฟอนต์หนึ่งตัว — mono สำหรับ *ตัวเลขทุกตัว*"""
+    load_fonts()
     f = QFont()
     f.setFamilies(MONO_FAMILIES if mono else UI_FAMILIES)
     f.setPixelSize(size)
     f.setWeight(weight)
-    if track:
-        f.setLetterSpacing(QFont.SpacingType.AbsoluteSpacing, track)
-    if caps:
-        f.setCapitalization(QFont.Capitalization.AllUppercase)
     return f
 
 
@@ -94,11 +104,8 @@ def ground(w, color):
 
 
 def section(p, x, y, s):
-    """ป้ายหัวข้อแผง — ขีดตั้งสั้นนำหน้า (ภาษาเดียวกับขีดสถานะในแถว) + ตัวอักษรสว่าง ใหญ่กว่าเดิม"""
-    p.setPen(Qt.PenStyle.NoPen)
-    p.setBrush(QColor(HEAD))
-    p.drawRoundedRect(QRectF(x, y + 3, 3, 12), 1.5, 1.5)
-    text(p, x + 12, y, s, face(12, QFont.Weight.Bold, track=1.0), HEAD)
+    """ป้ายหัวข้อแผง — ตัวหนาธรรมดา ไม่มีเครื่องประดับ"""
+    text(p, x, y, s, face(13, QFont.Weight.DemiBold), HEAD)
 
 
 def cup_mark(p, cx, cy, s, color):
@@ -130,7 +137,7 @@ def cup_mark(p, cx, cy, s, color):
 
 # ─────────────────────────── ปุ่ม ───────────────────────────
 class Button(QAbstractButton):
-    """ปุ่มวาดเอง — มุมมน antialias + ไล่สีตอน hover ใน 160ms (QSS ของ Qt ทำ transition ไม่ได้)
+    """ปุ่มวาดเอง — มุมเล็ก antialias + ไล่สีตอน hover ใน 160ms (QSS ของ Qt ทำ transition ไม่ได้)
     เป็น QAbstractButton จึงได้ focus ring, กด Space/Enter, และ signal clicked มาฟรี"""
 
     def __init__(self, label, hint="", primary=False):
@@ -138,7 +145,7 @@ class Button(QAbstractButton):
         self.label, self.hint, self.primary = label, hint, primary
         self._glow = 0.0
         self.setCursor(Qt.CursorShape.PointingHandCursor)
-        self.setMinimumHeight(44 if primary else 36)
+        self.setMinimumHeight(40 if primary else 36)
         self.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
         self.anim = QVariantAnimation(self)
         self.anim.valueChanged.connect(self._set_glow)
@@ -170,27 +177,26 @@ class Button(QAbstractButton):
         p.setRenderHint(QPainter.RenderHint.Antialiasing)
         r = QRectF(self.rect()).adjusted(0.5, 0.5, -0.5, -0.5)
         g = self._glow * (0.55 if self.isDown() else 1.0)
-        if self.primary:
-            base = QColor(SIGNAL).darker(int(100 + 14 * (1 - g)))
-            p.setBrush(base)
+        if self.primary:                         # ปุ่มหลักของหน้า: น้ำเงินทึบ
+            p.setBrush(QColor(ACCENT).lighter(int(100 + 22 * g)))
             p.setPen(Qt.PenStyle.NoPen)
-            ink, sub = QColor("#06110B"), QColor(0, 0, 0, 150)
-        else:
-            p.setBrush(QColor(CARD).lighter(int(100 + 16 * g)))
+            ink, sub = QColor("#FFFFFF"), QColor(255, 255, 255, 170)
+        else:                                    # ปุ่มรอง: โปร่ง มีขอบ — hover แล้วพื้นสว่างขึ้น
+            p.setBrush(QColor(HOVER) if g > 0.5 else QColor(CARD) if g > 0 else Qt.BrushStyle.NoBrush)
             p.setPen(pen(QColor(LINE).lighter(int(100 + 40 * g))))
-            ink, sub = QColor(TXT), QColor(DIM)
-        p.drawRoundedRect(r, 9, 9)
+            ink, sub = QColor(TXT), QColor(FAINT)
+        p.drawRoundedRect(r, R, R)
         if self.hasFocus():                      # a11y — เห็นชัดว่าโฟกัสอยู่ปุ่มไหน
             p.setBrush(Qt.BrushStyle.NoBrush)
-            p.setPen(pen(SIGNAL, 1.6))
-            p.drawRoundedRect(r.adjusted(-1.5, -1.5, 1.5, 1.5), 10.5, 10.5)
+            p.setPen(pen(ACCENT_HI, 2))
+            p.drawRoundedRect(r.adjusted(-1, -1, 1, 1), R + 1, R + 1)
 
-        wide = self.primary or self.width() > 240   # ปุ่มเต็มแถว (primary + "เลือกกล้อง") ใหญ่กว่าปุ่มในแถบสามช่อง
-        f = face(14 if wide else 12, QFont.Weight.Bold if self.primary else QFont.Weight.DemiBold)
+        f = face(13, QFont.Weight.DemiBold)
         p.setFont(f)
         p.setPen(pen(ink))
         pad = 14 if self.primary else 11
-        p.drawText(r.adjusted(pad, 0, -pad, 0),
+        room = 0 if self.primary or self.width() > 200 else 16   # ปุ่มแคบ: กันป้ายชนคีย์ลัด
+        p.drawText(r.adjusted(pad, 0, -pad - room, 0),
                    int(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter)
                    if self.primary else int(Qt.AlignmentFlag.AlignCenter), self.label)
         if self.hint:                            # คีย์ลัดกำกับทุกปุ่ม
@@ -213,6 +219,7 @@ class Viewport(QWidget):
         self.beat = 0.0
         self.box = None                 # สี่เหลี่ยมของภาพบนวิดเจ็ต — ไว้แปลงตำแหน่งเมาส์ ↔ สัดส่วนเฟรม
         self.zones = {"A": None, "B": None}   # polygon สัดส่วน 0-1 (Station เป็นเจ้าของ ที่นี่แค่วาด)
+        self.show_zones = False         # True เฉพาะโหมด zone — กลับโหมดตรวจแล้วกรอบต้องหายจากจอ (ค่ากรอบยังจำไว้ใช้ต่อ)
         self.stage = None               # "A"/"B" = กำลังวาดอันนั้น · None = ไม่ได้วาด
         self.pts = []                   # จุดของ polygon ที่กำลังวาด
         self.hover = None
@@ -297,6 +304,8 @@ class Viewport(QWidget):
         return QPointF(box.left() + pt[0] * box.width(), box.top() + pt[1] * box.height())
 
     def _paint_zones(self, p, box):
+        if not self.show_zones:
+            return
         for name, col in (("A", VIOLET), ("B", SIGNAL)):
             poly = self.zones.get(name)
             if not poly:
@@ -314,7 +323,7 @@ class Viewport(QWidget):
             chip.moveLeft(max(box.left() + 2, min(chip.left(), box.right() - 32)))
             p.setPen(Qt.PenStyle.NoPen)
             p.setBrush(QColor(6, 9, 14, 215))
-            p.drawRoundedRect(chip, 7, 7)
+            p.drawRoundedRect(chip, R, R)
             text(p, chip.left(), chip.top() + 6, name, face(17, QFont.Weight.Bold, mono=True), col,
                  Qt.AlignmentFlag.AlignCenter, 30)
         if not self.stage:
@@ -337,10 +346,10 @@ class Viewport(QWidget):
         x = box.left() + (box.width() - w) / 2
         p.setPen(Qt.PenStyle.NoPen)
         p.setBrush(QColor(6, 9, 14, 225))
-        p.drawRoundedRect(QRectF(x, box.top() + 14, w, 34), 8, 8)
+        p.drawRoundedRect(QRectF(x, box.top() + 14, w, 34), R, R)
         p.setPen(pen(col, 1.5))
         p.setBrush(Qt.BrushStyle.NoBrush)
-        p.drawRoundedRect(QRectF(x + 0.5, box.top() + 14.5, w - 1, 33), 8, 8)
+        p.drawRoundedRect(QRectF(x + 0.5, box.top() + 14.5, w - 1, 33), R, R)
         text(p, x, box.top() + 22, msg, f, TXT, Qt.AlignmentFlag.AlignCenter, w)
 
     def _marker(self, p, x, y, live):
@@ -354,18 +363,18 @@ class Viewport(QWidget):
         p.drawEllipse(QPointF(x + 4, y + 6), 8, 8)
         p.setBrush(col)
         p.drawEllipse(QPointF(x + 4, y + 6), 3.5, 3.5)
-        text(p, x + 18, y - 2, "LIVE" if live else "RECONNECTING",
-             face(12, QFont.Weight.Bold, track=1.6, caps=True), col.name())
+        text(p, x + 18, y - 2, "Live" if live else "Reconnecting",
+             face(13, QFont.Weight.DemiBold), col.name())
 
     def _chip(self, p, x, y, s):
         f = face(12, QFont.Weight.DemiBold, mono=True)
         w = QFontMetrics(f).horizontalAdvance(s) + 22
         p.setPen(Qt.PenStyle.NoPen)
         p.setBrush(QColor(6, 9, 14, 205))
-        p.drawRoundedRect(QRectF(x, y, w, 28), 6, 6)
+        p.drawRoundedRect(QRectF(x, y, w, 28), R, R)
         p.setPen(pen(QColor(255, 255, 255, 40)))
         p.setBrush(Qt.BrushStyle.NoBrush)
-        p.drawRoundedRect(QRectF(x + 0.5, y + 0.5, w - 1, 27), 6, 6)
+        p.drawRoundedRect(QRectF(x + 0.5, y + 0.5, w - 1, 27), R, R)
         p.setFont(f)
         p.setPen(pen(TXT))
         p.drawText(QRectF(x, y, w, 28), int(Qt.AlignmentFlag.AlignCenter), s)
@@ -435,14 +444,14 @@ class Rack(QWidget):
                     p.setBrush(QColor(ZONE_HEX[row[1]]))
                 else:
                     p.setBrush(QColor(SIGNAL) if ok else QColor(255, 255, 255, 36))
-                p.drawRoundedRect(QRectF(x, y, seg, 7), 2, 2)
+                p.drawRoundedRect(QRectF(x, y, seg, 6), 2, 2)
                 if not ok and prog > 0:                    # ช่องกำลังไต่
                     p.setBrush(QColor(AMBER))
-                    p.drawRoundedRect(QRectF(x, y, max(3.0, seg * prog), 7), 2, 2)
+                    p.drawRoundedRect(QRectF(x, y, max(3.0, seg * prog), 6), 2, 2)
         else:
             p.setPen(Qt.PenStyle.NoPen)
             p.setBrush(QColor(255, 255, 255, 28))
-            p.drawRoundedRect(QRectF(pad, y, inner, 7), 2, 2)
+            p.drawRoundedRect(QRectF(pad, y, inner, 6), 2, 2)
 
         p.setPen(pen(LINE))
         p.drawLine(pad, y + 30, W - pad, y + 30)
@@ -465,7 +474,7 @@ class Rack(QWidget):
                  face(12), FAINT)
             text(p, pad, top + 32,
                  "วางแก้วในกรอบ A แล้วยกไปวางที่ B" if zone else "วางแก้วให้กล้องเห็น แล้วหยิบขึ้นมาตรวจ",
-                 face(11), QColor(FAINT).darker(125).name())
+                 face(11), FAINT)
         else:
             shown = self.rows[:cap]
             if len(shown) < len(self.rows) and cap * (ROW_H + 6) + 20 > room:
@@ -489,44 +498,45 @@ class Rack(QWidget):
             ly = base + 22 + i * 22
             if i < len(self.log):
                 when, what = self.log[i]
-                text(p, pad, ly, when, face(11, mono=True), QColor(FAINT).darker(130).name())
+                text(p, pad, ly, when, face(11, mono=True), FAINT)
                 text(p, pad + 70, ly - 1, what, face(11), DIM if i else TXT)
             else:                       # บรรทัดว่างของสมุดบันทึก — ที่ว่างตรงนี้ตั้งใจเว้น ไม่ใช่ layout พัง
                 p.setPen(pen(QColor(255, 255, 255, 12)))
                 p.drawLine(pad, ly + 9, W - pad, ly + 9)
 
+    def _card(self, p, x, y, w):
+        p.setPen(pen(LINE))
+        p.setBrush(QColor(CARD))
+        p.drawRoundedRect(QRectF(x + 0.5, y + 0.5, w - 1, ROW_H - 1), R, R)
+
+    def _tag(self, p, x, y, s, col, f):
+        """ป้ายสถานะ: พื้นโปร่งสีเดียวกับตัวอักษร — ภาษาเดียวกับป้ายบนกรอบแก้ว"""
+        w = QFontMetrics(f).horizontalAdvance(s) + 20
+        fill = QColor(col)
+        fill.setAlpha(36)
+        p.setPen(Qt.PenStyle.NoPen)
+        p.setBrush(fill)
+        p.drawRoundedRect(QRectF(x, y + 11, w, ROW_H - 22), R, R)
+        text(p, x, y + 14, s, f, col.name(), Qt.AlignmentFlag.AlignCenter, w)
+
     def _zone_row(self, p, x, y, w, tid, state):
         col = QColor(ZONE_HEX[state])
-        p.setPen(Qt.PenStyle.NoPen)
-        p.setBrush(QColor(CARD))
-        p.drawRoundedRect(QRectF(x, y, w, ROW_H), 8, 8)
-        p.setBrush(col)                             # ขีดสถานะซ้าย — สีเดียวกับกรอบแก้วบนภาพ
-        p.drawRoundedRect(QRectF(x + 5, y + 11, 3, ROW_H - 22), 1.5, 1.5)
-        text(p, x + 18, y + 12, f"#{tid:02d}", face(18, QFont.Weight.Bold, mono=True),
-             col.name() if state != "idle" else TXT)
-        text(p, x + 76, y + 15, ZONE_NAME[state], face(13, QFont.Weight.DemiBold, mono=True), col.name())
+        self._card(p, x, y, w)
+        text(p, x + 14, y + 12, f"#{tid:02d}", face(18, QFont.Weight.Bold, mono=True), TXT)
+        self._tag(p, x + 70, y, ZONE_NAME[state], col, face(12, QFont.Weight.DemiBold, mono=True))
 
     def _row(self, p, x, y, w, tid, ok, prog, held_s):
         col = QColor(SIGNAL if ok else AMBER)
-        r = QRectF(x, y, w, ROW_H)
-        p.setPen(Qt.PenStyle.NoPen)
-        p.setBrush(QColor(CARD))
-        p.drawRoundedRect(r, 8, 8)
-
-        p.setBrush(col)                             # ขีดสถานะซ้าย — เขียว=ตรวจแล้ว อำพัน=ยังไม่ตรวจ
-        p.drawRoundedRect(QRectF(x + 5, y + 11, 3, ROW_H - 22), 1.5, 1.5)
-
-        text(p, x + 18, y + 12, f"#{tid:02d}", face(18, QFont.Weight.Bold, mono=True),
-             col.name() if ok else TXT)
-        text(p, x + 76, y + 15, "ตรวจแล้ว" if ok else "ยังไม่ตรวจ",
-             face(13, QFont.Weight.DemiBold), col.name())
+        self._card(p, x, y, w)
+        text(p, x + 14, y + 12, f"#{tid:02d}", face(18, QFont.Weight.Bold, mono=True), TXT)
+        self._tag(p, x + 70, y, "ตรวจแล้ว" if ok else "ยังไม่ตรวจ", col, face(12, QFont.Weight.DemiBold))
         if ok:
             text(p, x, y + 17, f"{held_s:5.0f}s", face(11, mono=True), FAINT,
                  Qt.AlignmentFlag.AlignRight, w - 14)
         elif prog > 0:                              # ตัวนับแบบรั่วกำลังสะสม
             p.setPen(Qt.PenStyle.NoPen)
             p.setBrush(QColor(AMBER))
-            p.drawRoundedRect(QRectF(x + 3, y + ROW_H - 3, (w - 6) * prog, 2), 1, 1)
+            p.drawRoundedRect(QRectF(x + 1, y + ROW_H - 3, (w - 2) * prog, 2), 1, 1)
 
 
 # ─────────────────────────── หน้าต่างหลัก ───────────────────────────
@@ -548,6 +558,7 @@ class Station(QWidget):
         self.view = Viewport()
         self.rack = Rack()
         self.head = Header()
+        self.head.on_mode = self.set_mode
         self.foot = Footer()
 
         self.new_round = Button("เริ่มรอบตรวจใหม่", "R", primary=True)
@@ -555,8 +566,6 @@ class Station(QWidget):
         self.cam_btn = Button("เลือกกล้อง", "C")
         self.cam_btn.clicked.connect(self.pick_camera)
         self.mode = "inspect"                       # inspect = เช็กลิสต์ตรวจแก้ว · zone = ย้ายแก้ว A → B
-        self.mode_btn = Button("โหมด: ตรวจ", "Z")
-        self.mode_btn.clicked.connect(self.toggle_mode)
         self.redraw_btn = Button("วาดใหม่", "X")
         self.redraw_btn.clicked.connect(self.start_drawing)
         self.redraw_btn.hide()
@@ -588,13 +597,14 @@ class Station(QWidget):
         self.conf_input.setSingleStep(0.05)
         self.conf_input.setValue(float(cfg.get("conf", 0.25)))
         self.conf_input.setKeyboardTracking(False)
-        self.conf_input.setMinimumSize(100, 36)
+        self.conf_input.setFixedSize(112, 36)
         self.conf_input.setFont(face(14, mono=True))
         self.conf_input.setAccessibleName("เกณฑ์ confidence ของ class cup")
         self.conf_input.setToolTip("เกณฑ์เริ่ม ID แก้วใหม่ · ID เดิมใช้คะแนนต่ำช่วยติดตามได้\nลดค่าเพื่อตรวจพบง่ายขึ้น · เพิ่มค่าเพื่อลดการตรวจผิด\nมีผลระหว่างรัน ไม่บันทึกลง config.yaml")
         self.conf_input.setStyleSheet(
             f"QDoubleSpinBox {{background:{CARD}; color:{TXT}; border:1px solid {LINE};"
-            "border-radius:6px; padding:4px 8px;}"
+            f"border-radius:{R}px; padding:4px 8px;}}"
+            f"QDoubleSpinBox:focus {{border:1px solid {ACCENT_HI};}}"
             "QDoubleSpinBox::up-button, QDoubleSpinBox::down-button {width:24px;}")
         self.conf_input.valueChanged.connect(self.set_cup_conf)
         conf_label.setBuddy(self.conf_input)
@@ -612,7 +622,7 @@ class Station(QWidget):
         self.duration_input.setSuffix(" s")
         self.duration_input.setValue(float(cfg.get("pick_seconds", 1.0)))
         self.duration_input.setKeyboardTracking(False)
-        self.duration_input.setMinimumSize(100, 36)
+        self.duration_input.setFixedSize(112, 36)
         self.duration_input.setFont(face(14, mono=True))
         self.duration_input.setStyleSheet(self.conf_input.styleSheet())
         self.duration_input.setAccessibleName("เวลาถือชิ้นงานก่อนนับว่าตรวจแล้ว หน่วยวินาที")
@@ -642,7 +652,7 @@ class Station(QWidget):
             spin.setSingleStep(0.05)
             spin.setValue(float(cfg.get(key, default)))
             spin.setKeyboardTracking(False)
-            spin.setMinimumSize(100, 30)
+            spin.setFixedSize(112, 30)
             spin.setFont(face(14, mono=True))
             spin.setStyleSheet(self.conf_input.styleSheet())
             spin.setAccessibleName(key)
@@ -657,11 +667,10 @@ class Station(QWidget):
         self.settings_btn = Button("ตั้งค่า", "T")
         self.settings_btn.clicked.connect(self.toggle_settings)
         keys.addWidget(self.settings_btn)
-        cam_row = QHBoxLayout()                     # กล้อง · โหมด (· วาดใหม่ เฉพาะโหมด zone) อยู่แถวเดียว —
+        cam_row = QHBoxLayout()                     # กล้อง (· วาดใหม่ เฉพาะโหมด zone) อยู่แถวเดียว —
         cam_row.setSpacing(8)                       # แถวใหม่จะกิน 44px จากรายการชิ้นงาน (Rack) จนแถวหาย
-        cam_row.addWidget(self.cam_btn, 5)
-        cam_row.addWidget(self.mode_btn, 7)
-        cam_row.addWidget(self.redraw_btn, 6)
+        cam_row.addWidget(self.cam_btn, 1)
+        cam_row.addWidget(self.redraw_btn, 1)
         keys.addLayout(cam_row)
         strip = QHBoxLayout()
         strip.setSpacing(8)
@@ -734,10 +743,14 @@ class Station(QWidget):
         self.settings.show()
 
     # ── โหมด zone: สลับโหมด + วาดกรอบ A/B (จำเฉพาะ session นี้ ไม่บันทึกลงไฟล์) ──
+    def set_mode(self, mode):
+        if mode != self.mode:
+            self.toggle_mode()
+
     def toggle_mode(self):
         if self.mode == "inspect":
             self.mode = "zone"
-            self.mode_btn.set_label("โหมด: Zone")
+            self.view.show_zones = True
             self.new_round.set_label("เริ่มรอบ Zone ใหม่")
             self.redraw_btn.show()
             self.an.set_mode("zone")
@@ -745,11 +758,12 @@ class Station(QWidget):
                 self.start_drawing()
         else:
             self.mode = "inspect"
-            self.view.stage, self.view.pts = None, []
-            self.mode_btn.set_label("โหมด: ตรวจ")
+            self.view.stage, self.view.pts, self.view.show_zones = None, [], False
             self.new_round.set_label("เริ่มรอบตรวจใหม่")
             self.redraw_btn.hide()
             self.an.set_mode("inspect")
+        self.head.mode = self.mode
+        self.head.update()
 
     def start_drawing(self):
         self.view.zones = {"A": None, "B": None}
@@ -797,9 +811,9 @@ class Station(QWidget):
             return
         m = QMenu(self)                               # popup แยกชั้น — QSS ไม่ไหลลงหน้าต่างหลัก
         m.setStyleSheet(
-            f"QMenu{{background:{PANEL};color:{TXT};border:1px solid {LINE};padding:6px}}"
-            f"QMenu::item{{padding:8px 26px 8px 16px;border-radius:6px}}"
-            f"QMenu::item:selected{{background:{CARD}}}")
+            f"QMenu{{background:{PANEL};color:{TXT};border:1px solid {LINE};padding:4px}}"
+            f"QMenu::item{{padding:8px 26px 8px 16px;border-radius:{R}px}}"
+            f"QMenu::item:selected{{background:{HOVER}}}")
         for i in cam.available:
             act = m.addAction(f"กล้อง {i}" + ("   ●" if i == cam.index else ""))
             act.triggered.connect(lambda _=False, n=i: self.set_camera(n))
@@ -894,7 +908,7 @@ class Station(QWidget):
 
 
 class Rail(QWidget):
-    """กรอบของแผงข้าง — เส้นแบ่ง 1px กับขีดสเกลที่ขอบ ทำให้ดูเป็นขอบเครื่องวัด ไม่ใช่ขอบการ์ดเว็บ"""
+    """กรอบของแผงข้าง — พื้นแผง + เส้นแบ่ง 1px ทางซ้าย"""
 
     def __init__(self):
         super().__init__()
@@ -905,24 +919,55 @@ class Rail(QWidget):
         p.fillRect(self.rect(), QColor(PANEL))
         p.setPen(pen(LINE))
         p.drawLine(0, 0, 0, self.height())
-        p.setPen(pen(QColor(255, 255, 255, 30)))
-        for y in range(14, self.height() - 6, 14):
-            p.drawLine(1, y, 5 if y % 70 == 14 else 3, y)     # ขีดยาวทุกห้าขีด เหมือนไม้บรรทัด
+
+
+TABS = (("inspect", "เช็กลิสต์ตรวจ"), ("zone", "ย้ายแก้ว A → B"))
 
 
 class Header(QWidget):
-    """หัวแถบ: เครื่องหมายสถานี · ชื่อ · เวลาปัจจุบัน + ความยาวรอบตรวจ"""
+    """หัวแถบ: โลโก้ · ชื่อ · แท็บโหมด (ขีดใต้แท็บที่เลือก) · เวลาปัจจุบัน + ความยาวรอบตรวจ"""
 
     def __init__(self):
         super().__init__()
         self.st, self.clock = {}, ""
-        self.setFixedHeight(58)
+        self.mode, self.hover = "inspect", None
+        self.on_mode = lambda m: None            # Station ผูกให้
+        self.setFixedHeight(52)
+        self.setMouseTracking(True)
 
     def set(self, st):
         now = time.strftime("%H:%M:%S")
         if now != self.clock:            # หัวแถบเปลี่ยนแค่วินาทีละครั้ง ไม่ต้องวาด 50 ครั้ง/วิ
             self.st, self.clock = st, now
             self.update()
+
+    def _tabs(self):
+        """[(โหมด, ป้าย, สี่เหลี่ยม)] — วาดกับรับเมาส์ใช้ชุดเดียวกัน"""
+        f, x, out = face(13, QFont.Weight.DemiBold), 232, []
+        for mode, label in TABS:
+            w = QFontMetrics(f).horizontalAdvance(label) + 36
+            out.append((mode, label, QRectF(x, 0, w, self.height())))
+            x += w
+        return out
+
+    def _tab_at(self, pos):
+        return next((m for m, _, r in self._tabs() if r.contains(pos)), None)
+
+    def mouseMoveEvent(self, e):
+        hit = self._tab_at(e.position())
+        self.setCursor(Qt.CursorShape.PointingHandCursor if hit else Qt.CursorShape.ArrowCursor)
+        if hit != self.hover:
+            self.hover = hit
+            self.update()
+
+    def leaveEvent(self, e):
+        self.hover = None
+        self.update()
+
+    def mousePressEvent(self, e):
+        hit = self._tab_at(e.position())
+        if hit and e.button() == Qt.MouseButton.LeftButton:
+            self.on_mode(hit)
 
     def paintEvent(self, e):
         p = QPainter(self)
@@ -931,19 +976,25 @@ class Header(QWidget):
         p.setPen(pen(LINE))
         p.drawLine(0, self.height() - 1, self.width(), self.height() - 1)
 
-        cup_mark(p, 32, 30, 30, SIGNAL)                # โลโก้: แก้วมัค
+        cup_mark(p, 32, 28, 28, ACCENT_HI)             # โลโก้: แก้วมัค
+        text(p, 52, 15, "TKK Workshop", face(16, QFont.Weight.Bold), TXT)
+        p.setPen(pen(LINE))
+        p.drawLine(214, 14, 214, 38)
 
-        text(p, 52, 11, "TKK WORKSHOP",
-             face(15, QFont.Weight.Bold, track=2.6, caps=True), TXT)
-        zone = self.st.get("mode") == "zone"
-        text(p, 52, 33, "โหมด Zone · ย้ายแก้วจากกรอบ A ไปกรอบ B" if zone else
-             "เช็กลิสต์ผู้ตรวจ · operator หยิบชิ้นงานไหนออกมาตรวจแล้วบ้าง", face(12), DIM)
+        for mode, label, r in self._tabs():
+            on = mode == self.mode
+            if on:
+                p.fillRect(QRectF(r.left(), r.bottom() - 2, r.width(), 2), QColor(ACCENT_HI))
+            elif mode == self.hover:
+                p.fillRect(QRectF(r.left(), 8, r.width(), r.height() - 17), QColor(HOVER))
+            text(p, r.left(), 17, label, face(13, QFont.Weight.DemiBold), TXT if on else DIM,
+                 Qt.AlignmentFlag.AlignCenter, r.width())
 
         r = int(self.st.get("round_s", 0))
-        text(p, 0, 10, self.clock, face(17, QFont.Weight.DemiBold, mono=True),
-             TXT, Qt.AlignmentFlag.AlignRight, self.width() - 28)
-        text(p, 0, 34, f"รอบนี้ {r // 60:02d}:{r % 60:02d}", face(12, mono=True), DIM,
-             Qt.AlignmentFlag.AlignRight, self.width() - 28)
+        text(p, 0, 9, self.clock, face(16, QFont.Weight.DemiBold, mono=True),
+             TXT, Qt.AlignmentFlag.AlignRight, self.width() - 22)
+        text(p, 0, 29, f"รอบนี้ {r // 60:02d}:{r % 60:02d}", face(12, mono=True), DIM,
+             Qt.AlignmentFlag.AlignRight, self.width() - 22)
 
 
 class Footer(QWidget):
@@ -952,12 +1003,12 @@ class Footer(QWidget):
     def __init__(self):
         super().__init__()
         self.line = ("", DIM, "")
-        self.setFixedHeight(44)
+        self.setFixedHeight(40)
 
     def set(self, st, msg, events):
         note, expire = msg
         if note and time.time() < expire:
-            state, col = note, SIGNAL
+            state, col = note, ACCENT_HI
         elif not st.get("camera", True):
             state, col = "กล้องหลุด — กำลังเชื่อมต่อใหม่", AMBER
         elif st.get("mode") == "zone":
@@ -990,11 +1041,11 @@ class Footer(QWidget):
         state, col, last = self.line
         p.setPen(Qt.PenStyle.NoPen)
         p.setBrush(QColor(col))
-        p.drawEllipse(QPointF(28, 22), 5, 5)
-        text(p, 44, 13, state, face(13, QFont.Weight.DemiBold), col)
+        p.drawEllipse(QPointF(24, 20), 4, 4)
+        text(p, 38, 11, state, face(13, QFont.Weight.DemiBold), col)
         if last:
-            text(p, 0, 14, last, face(12, mono=True), FAINT,
-                 Qt.AlignmentFlag.AlignRight, self.width() - 28)
+            text(p, 0, 12, last, face(12, mono=True), FAINT,
+                 Qt.AlignmentFlag.AlignRight, self.width() - 22)
 
 
 # ─────────────────────────── main ───────────────────────────

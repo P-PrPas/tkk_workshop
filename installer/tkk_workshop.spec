@@ -24,6 +24,7 @@ ENTITLEMENTS = str(ROOT / "installer" / "entitlements.plist") if SIGN_ID else No
 datas = [
     (str(APP / "config.yaml"), "."),
     (str(ROOT / "data" / "hand_landmarker.task"), "."),     # โมเดลมือของ MediaPipe — ไม่ต้องดาวน์โหลดตอนเปิด
+    (str(APP / "fonts"), "fonts"),                          # Inter / Noto Sans Thai / JetBrains Mono — หน้าตาเหมือนกันทุกเครื่อง
 ]
 models = sorted(p for p in (APP / "models").glob("cup_v*") if p.suffix in (".pt", ".onnx"))
 if not any(p.name == "cup_v2.pt" for p in models):
