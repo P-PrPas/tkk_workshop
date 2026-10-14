@@ -9,6 +9,7 @@ app/shot_*.png
 .venv-train/
 datasets/_coco_cache/
 *.docx
+!docs/*.docx
 
 # ตัวติดตั้ง
 /dist/
